@@ -17,7 +17,6 @@ jobs:
   apply-dev:
     name: apply (dev) (${{ matrix.stack }})
     runs-on: ubuntu-latest
-    environment: dev
 
     strategy:
       fail-fast: false
@@ -61,7 +60,6 @@ jobs:
   apply-prod:
     name: apply (prod) (${{ matrix.stack }})
     runs-on: ubuntu-latest
-    environment: prod
     needs: apply-dev
 
     strategy:
