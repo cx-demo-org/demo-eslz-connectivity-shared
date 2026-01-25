@@ -11,12 +11,12 @@ module "connectivity_virtual_wan" {
   enable_telemetry = var.enable_module_telemetry
   tags             = var.tags
 
-  virtual_wan_name                = var.virtual_wan_name
+  virtual_wan_name    = var.virtual_wan_name
   location            = var.location
   resource_group_name = azurerm_resource_group.connectivity.name
   type                = var.virtual_wan_sku
 
-  allow_branch_to_branch_traffic    = var.allow_branch_to_branch_traffic
-  disable_vpn_encryption            = var.disable_vpn_encryption
+  allow_branch_to_branch_traffic = var.allow_branch_to_branch_traffic
+  disable_vpn_encryption         = var.disable_vpn_encryption
 }
 

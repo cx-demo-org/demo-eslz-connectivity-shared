@@ -73,7 +73,7 @@ jobs:
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-${{ matrix.stack }}
+          name: tfplan-${{ replace(matrix.stack, '/', '-') }}
           path: ${{ matrix.stack }}/plan.txt
 
       - name: Comment plan on PR (summary)
