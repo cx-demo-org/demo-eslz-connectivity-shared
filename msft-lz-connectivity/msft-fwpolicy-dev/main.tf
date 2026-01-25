@@ -68,6 +68,15 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
       destination_ports     = ["123"]
     }
 
+    # Generic HTTPS egress
+    rule {
+      name                  = "https-tcp"
+      protocols             = ["TCP"]
+      source_addresses      = var.aks_egress_source_addresses
+      destination_addresses = ["0.0.0.0/0"]
+      destination_ports     = ["443"]
+    }
+
     # Optional extra TCP/443 destinations expressed as FQDNs (if you prefer network rules).
     dynamic "rule" {
       for_each = length(var.aks_egress_network_allow.extra_tcp_fqdns) > 0 ? [1] : []
