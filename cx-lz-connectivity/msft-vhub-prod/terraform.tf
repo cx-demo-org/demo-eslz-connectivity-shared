@@ -12,11 +12,11 @@ terraform {
     }
     modtm = {
       source  = "Azure/modtm"
-      version = "~> 0.2"
+      version = "~> 0.3"
     }
     random = {
       source  = "hashicorp/random"
-      version = "~> 3.5"
+      version = "~> 3.8"
     }
   }
 }
@@ -27,7 +27,7 @@ provider "azurerm" {
       prevent_deletion_if_contains_resources = false
     }
   }
-  #   subscription_id     = "2f69b2b1-5fe0-487d-8c82-52f5edeb454e"
-  #   tenant_id           = "9a9712e7-1382-4528-8495-b52ae7688acb"
-  #   storage_use_azuread = true
+
+  # Must match the subscription where the vWAN exists.
+  subscription_id = "2f69b2b1-5fe0-487d-8c82-52f5edeb454e"
 }
