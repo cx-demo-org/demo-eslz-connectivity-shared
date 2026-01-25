@@ -31,6 +31,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Option A (OIDC subject = ref:refs/heads/main): always run plan against main
+          # so we only need a single federated credential for the repo's main branch.
+          ref: main
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -124,6 +128,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -188,6 +194,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -252,6 +260,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -316,6 +326,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
