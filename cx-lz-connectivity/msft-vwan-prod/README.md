@@ -7,7 +7,7 @@ This configuration provisions an Azure Virtual WAN and a single hub in the conne
 - Terraform 1.9+
 - An existing resource group that will host the Virtual WAN and hub resources
 - Appropriate permissions in the connectivity subscription
-- Persistent local backend path `C:/LocalApps/GithubWorkspaces/cx-statestore/cx-vwan-demo/terraform.tfstate`
+- Persistent local backend path `C:/LocalApps/GithubWorkspaces/cx-statestore/msft-vwan-prod/terraform.tfstate`
 
 ## Usage
 
