@@ -25,6 +25,12 @@ variable "tags" {
   }
 }
 
+variable "admin_ssh_source_cidrs" {
+  description = "Source CIDRs allowed to SSH (TCP/22) to resources behind the dev hub firewall. Set to your public IP in CIDR form, e.g. ['203.0.113.10/32']."
+  type        = list(string)
+  default     = []
+}
+
 variable "aks_egress_source_addresses" {
   description = "Source CIDRs for AKS node pools when using UDR egress (e.g., node subnet CIDR). Use ['*'] only for quick testing."
   type        = list(string)
