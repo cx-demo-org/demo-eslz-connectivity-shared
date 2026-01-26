@@ -11,7 +11,7 @@ resource "azurerm_firewall_policy" "this" {
 resource "azurerm_firewall_policy_rule_collection_group" "baseline" {
   name               = "baseline"
   firewall_policy_id = azurerm_firewall_policy.this.id
-  priority           = 1000
+  priority           = 500
 }
 
 resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
