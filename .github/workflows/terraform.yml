@@ -1,0 +1,616 @@
+name: terraform
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        type: choice
+        required: true
+        default: plan
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+# Avoid multiple runs of this workflow stomping on each other.
+# (Per-stack concurrency below provides the stronger guarantee.)
+concurrency:
+  group: tf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARM_USE_OIDC: true
+  ARM_USE_AZUREAD: true
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || 'c14be0d1-54b1-4c90-949b-2775aec6307e' }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || '9a9712e7-1382-4528-8495-b52ae7688acb' }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || '2f69b2b1-5fe0-487d-8c82-52f5edeb454e' }}
+  TF_IN_AUTOMATION: true
+
+jobs:
+  detect-changes:
+    name: detect changed stacks
+    runs-on: ubuntu-latest
+
+    outputs:
+      # Individual stacks
+      vwan_prod: ${{ steps.filter.outputs.vwan_prod }}
+      fwpolicy_dev: ${{ steps.filter.outputs.fwpolicy_dev }}
+      vhub_dev: ${{ steps.filter.outputs.vhub_dev }}
+      fwpolicy_prod: ${{ steps.filter.outputs.fwpolicy_prod }}
+      vhub_prod: ${{ steps.filter.outputs.vhub_prod }}
+
+      # Grouping helpers
+      shared: ${{ steps.filter.outputs.shared }}
+      dev: ${{ steps.filter.outputs.dev }}
+      prod: ${{ steps.filter.outputs.prod }}
+
+      # Apply stack lists (JSON arrays) derived from the above booleans.
+      apply_dev_stacks_json: ${{ steps.set-matrix.outputs.apply_dev_stacks_json }}
+      apply_prod_stacks_json: ${{ steps.set-matrix.outputs.apply_prod_stacks_json }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            # Shared root changes that should trigger (almost) everything.
+            shared:
+              - 'msft-lz-connectivity/**'
+              - '!msft-lz-connectivity/msft-vwan-prod/**'
+              - '!msft-lz-connectivity/msft-fwpolicy-dev/**'
+              - '!msft-lz-connectivity/msft-vhub-dev/**'
+              - '!msft-lz-connectivity/msft-fwpolicy-prod/**'
+              - '!msft-lz-connectivity/msft-vhub-prod/**'
+              - '.github/workflows/terraform.yml'
+
+            vwan_prod:
+              - 'msft-lz-connectivity/msft-vwan-prod/**'
+            fwpolicy_dev:
+              - 'msft-lz-connectivity/msft-fwpolicy-dev/**'
+            vhub_dev:
+              - 'msft-lz-connectivity/msft-vhub-dev/**'
+            fwpolicy_prod:
+              - 'msft-lz-connectivity/msft-fwpolicy-prod/**'
+            vhub_prod:
+              - 'msft-lz-connectivity/msft-vhub-prod/**'
+
+            dev:
+              - 'msft-lz-connectivity/msft-fwpolicy-dev/**'
+              - 'msft-lz-connectivity/msft-vhub-dev/**'
+            prod:
+              - 'msft-lz-connectivity/msft-vwan-prod/**'
+              - 'msft-lz-connectivity/msft-fwpolicy-prod/**'
+              - 'msft-lz-connectivity/msft-vhub-prod/**'
+
+      - name: Set apply matrices
+        id: set-matrix
+        shell: bash
+        run: |
+          # Build minimal apply matrix lists.
+          # Rules:
+          # - vhub-dev changes => apply fwpolicy-dev and vhub-dev (vhub depends on fwpolicy)
+          # - fwpolicy-dev changes => apply fwpolicy-dev and vhub-dev (policy can impact hub routing)
+          # - vwan-prod changes => apply vwan-prod and then prod dependents
+          # - vhub-prod changes => apply vhub-prod and fwpolicy-prod
+          # - fwpolicy-prod changes => apply fwpolicy-prod and vhub-prod
+          # - shared changes => apply everything
+
+          apply_dev='[]'
+          apply_prod='[]'
+
+          if [[ "${{ steps.filter.outputs.shared }}" == 'true' ]]; then
+            apply_dev='["msft-lz-connectivity/msft-vwan-prod","msft-lz-connectivity/msft-fwpolicy-dev","msft-lz-connectivity/msft-vhub-dev"]'
+            apply_prod='["msft-lz-connectivity/msft-fwpolicy-prod","msft-lz-connectivity/msft-vhub-prod"]'
+          else
+            # dev
+            if [[ "${{ steps.filter.outputs.fwpolicy_dev }}" == 'true' || "${{ steps.filter.outputs.vhub_dev }}" == 'true' ]]; then
+              apply_dev='["msft-lz-connectivity/msft-fwpolicy-dev","msft-lz-connectivity/msft-vhub-dev"]'
+            fi
+
+            # prod
+            if [[ "${{ steps.filter.outputs.vwan_prod }}" == 'true' ]]; then
+              apply_prod='["msft-lz-connectivity/msft-vwan-prod","msft-lz-connectivity/msft-fwpolicy-prod","msft-lz-connectivity/msft-vhub-prod"]'
+            elif [[ "${{ steps.filter.outputs.fwpolicy_prod }}" == 'true' || "${{ steps.filter.outputs.vhub_prod }}" == 'true' ]]; then
+              apply_prod='["msft-lz-connectivity/msft-fwpolicy-prod","msft-lz-connectivity/msft-vhub-prod"]'
+            fi
+          fi
+
+          echo "apply_dev_stacks_json=${apply_dev}" >> "$GITHUB_OUTPUT"
+          echo "apply_prod_stacks_json=${apply_prod}" >> "$GITHUB_OUTPUT"
+
+  # -----------------
+  # Plan jobs (selective)
+  # -----------------
+
+  plan-vwan:
+    name: plan (msft-lz-connectivity/msft-vwan-prod)
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.shared == 'true' ||
+      needs.detect-changes.outputs.prod == 'true'
+
+    concurrency:
+      group: tfstate-${{ github.workflow }}-msft-lz-connectivity/msft-vwan-prod
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: msft-lz-connectivity/msft-vwan-prod
+        run: terraform init -input=false
+
+      - name: Terraform fmt check
+        working-directory: msft-lz-connectivity/msft-vwan-prod
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        working-directory: msft-lz-connectivity/msft-vwan-prod
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: msft-lz-connectivity/msft-vwan-prod
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-msft-lz-connectivity-msft-vwan-prod
+          path: msft-lz-connectivity/msft-vwan-prod/plan.txt
+
+      - name: Comment plan on PR (summary)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const stack = 'msft-lz-connectivity/msft-vwan-prod';
+            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
+            let plan = '';
+            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
+            const max = 60000;
+            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
+            const marker = `<!-- tfplan:${stack} -->`;
+            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find(c => (c.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
+  plan-fwpolicy-prod:
+    name: plan (msft-lz-connectivity/msft-fwpolicy-prod)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - plan-vwan
+    if: |
+      always() &&
+      (needs.detect-changes.outputs.shared == 'true' ||
+       needs.detect-changes.outputs.fwpolicy_prod == 'true' ||
+       needs.detect-changes.outputs.vhub_prod == 'true') &&
+      (needs.detect-changes.outputs.shared == 'true' || needs.plan-vwan.result == 'success')
+
+    concurrency:
+      group: tfstate-${{ github.workflow }}-msft-lz-connectivity/msft-fwpolicy-prod
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: msft-lz-connectivity/msft-fwpolicy-prod
+        run: terraform init -input=false
+
+      - name: Terraform fmt check
+        working-directory: msft-lz-connectivity/msft-fwpolicy-prod
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        working-directory: msft-lz-connectivity/msft-fwpolicy-prod
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: msft-lz-connectivity/msft-fwpolicy-prod
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-msft-lz-connectivity-msft-fwpolicy-prod
+          path: msft-lz-connectivity/msft-fwpolicy-prod/plan.txt
+
+      - name: Comment plan on PR (summary)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const stack = 'msft-lz-connectivity/msft-fwpolicy-prod';
+            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
+            let plan = '';
+            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
+            const max = 60000;
+            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
+            const marker = `<!-- tfplan:${stack} -->`;
+            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
+            const existing = comments.find(c => (c.body || '').includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+
+  plan-fwpolicy-dev:
+    name: plan (msft-lz-connectivity/msft-fwpolicy-dev)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - plan-vwan
+    if: |
+      always() &&
+      (needs.detect-changes.outputs.shared == 'true' ||
+       needs.detect-changes.outputs.fwpolicy_dev == 'true' ||
+       needs.detect-changes.outputs.vhub_dev == 'true') &&
+      (needs.detect-changes.outputs.shared == 'true' || needs.plan-vwan.result == 'success')
+
+    concurrency:
+      group: tfstate-${{ github.workflow }}-msft-lz-connectivity/msft-fwpolicy-dev
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: msft-lz-connectivity/msft-fwpolicy-dev
+        run: terraform init -input=false
+
+      - name: Terraform fmt check
+        working-directory: msft-lz-connectivity/msft-fwpolicy-dev
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        working-directory: msft-lz-connectivity/msft-fwpolicy-dev
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: msft-lz-connectivity/msft-fwpolicy-dev
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-msft-lz-connectivity-msft-fwpolicy-dev
+          path: msft-lz-connectivity/msft-fwpolicy-dev/plan.txt
+
+      - name: Comment plan on PR (summary)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const stack = 'msft-lz-connectivity/msft-fwpolicy-dev';
+            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
+            let plan = '';
+            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
+            const max = 60000;
+            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
+            const marker = `<!-- tfplan:${stack} -->`;
+            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
+            const existing = comments.find(c => (c.body || '').includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+
+  plan-vhub-prod:
+    name: plan (msft-lz-connectivity/msft-vhub-prod)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - plan-fwpolicy-prod
+    if: |
+      always() &&
+      (needs.detect-changes.outputs.shared == 'true' ||
+       needs.detect-changes.outputs.vhub_prod == 'true')
+
+    concurrency:
+      group: tfstate-${{ github.workflow }}-msft-lz-connectivity/msft-vhub-prod
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: msft-lz-connectivity/msft-vhub-prod
+        run: terraform init -input=false
+
+      - name: Terraform fmt check
+        working-directory: msft-lz-connectivity/msft-vhub-prod
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        working-directory: msft-lz-connectivity/msft-vhub-prod
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: msft-lz-connectivity/msft-vhub-prod
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-msft-lz-connectivity-msft-vhub-prod
+          path: msft-lz-connectivity/msft-vhub-prod/plan.txt
+
+      - name: Comment plan on PR (summary)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const stack = 'msft-lz-connectivity/msft-vhub-prod';
+            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
+            let plan = '';
+            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
+            const max = 60000;
+            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
+            const marker = `<!-- tfplan:${stack} -->`;
+            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
+            const existing = comments.find(c => (c.body || '').includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+
+  plan-vhub-dev:
+    name: plan (msft-lz-connectivity/msft-vhub-dev)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - plan-fwpolicy-dev
+    if: |
+      always() &&
+      (needs.detect-changes.outputs.shared == 'true' ||
+       needs.detect-changes.outputs.vhub_dev == 'true')
+
+    concurrency:
+      group: tfstate-${{ github.workflow }}-msft-lz-connectivity/msft-vhub-dev
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: msft-lz-connectivity/msft-vhub-dev
+        run: terraform init -input=false
+
+      - name: Terraform fmt check
+        working-directory: msft-lz-connectivity/msft-vhub-dev
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        working-directory: msft-lz-connectivity/msft-vhub-dev
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: msft-lz-connectivity/msft-vhub-dev
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-msft-lz-connectivity-msft-vhub-dev
+          path: msft-lz-connectivity/msft-vhub-dev/plan.txt
+
+      - name: Comment plan on PR (summary)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const stack = 'msft-lz-connectivity/msft-vhub-dev';
+            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
+            let plan = '';
+            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
+            const max = 60000;
+            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
+            const marker = `<!-- tfplan:${stack} -->`;
+            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
+            const existing = comments.find(c => (c.body || '').includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+
+  # ------------------------
+  # Apply jobs (main only)
+  # ------------------------
+
+  apply-dev:
+    name: apply (dev) (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - plan-fwpolicy-dev
+      - plan-vhub-dev
+    if: |
+      always() &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')) &&
+      (needs.detect-changes.outputs.shared == 'true' || needs.detect-changes.outputs.dev == 'true') &&
+      needs.detect-changes.outputs.apply_dev_stacks_json != '[]'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: ${{ fromJSON(needs.detect-changes.outputs.apply_dev_stacks_json) }}
+
+    concurrency:
+      group: tfstate-${{ github.workflow }}-${{ matrix.stack }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ matrix.stack }}
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        working-directory: ${{ matrix.stack }}
+        run: terraform apply -input=false -auto-approve
+
+  apply-prod:
+    name: apply (prod) (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - apply-dev
+      - plan-fwpolicy-prod
+      - plan-vhub-prod
+    if: |
+      always() &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')) &&
+      (needs.detect-changes.outputs.shared == 'true' || needs.detect-changes.outputs.prod == 'true') &&
+      needs.detect-changes.outputs.apply_prod_stacks_json != '[]'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: ${{ fromJSON(needs.detect-changes.outputs.apply_prod_stacks_json) }}
+
+    concurrency:
+      group: tfstate-${{ github.workflow }}-${{ matrix.stack }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ matrix.stack }}
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        working-directory: ${{ matrix.stack }}
+        run: terraform apply -input=false -auto-approve

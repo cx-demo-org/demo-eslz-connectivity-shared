@@ -7,31 +7,6 @@ resource "azurerm_firewall_policy" "this" {
   tags = var.tags
 }
 
-resource "azurerm_firewall_policy_rule_collection_group" "baseline" {
-  name               = "baseline"
-  firewall_policy_id = azurerm_firewall_policy.this.id
-  priority           = 1000
-
-  # Admin access rules (disabled by default via empty source CIDR list)
-  dynamic "network_rule_collection" {
-    for_each = length(var.admin_ssh_source_cidrs) > 0 ? [1] : []
-    content {
-      name     = "admin-inbound"
-      priority = 1000
-      action   = "Allow"
-
-      # Allow SSH from a fixed admin public IP (or IP set)
-      rule {
-        name                  = "ssh-tcp-22"
-        protocols             = ["TCP"]
-        source_addresses      = var.admin_ssh_source_cidrs
-        destination_addresses = ["*"]
-        destination_ports     = ["22"]
-      }
-    }
-  }
-}
-
 resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
   name               = "aks-egress"
   firewall_policy_id = azurerm_firewall_policy.this.id

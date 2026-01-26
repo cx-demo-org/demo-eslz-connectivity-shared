@@ -7,13 +7,6 @@ resource "azurerm_firewall_policy" "this" {
   tags = var.tags
 }
 
-# Baseline placeholder rule collection group.
-resource "azurerm_firewall_policy_rule_collection_group" "baseline" {
-  name               = "baseline"
-  firewall_policy_id = azurerm_firewall_policy.this.id
-  priority           = 1000
-}
-
 resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
   name               = "aks-egress"
   firewall_policy_id = azurerm_firewall_policy.this.id
