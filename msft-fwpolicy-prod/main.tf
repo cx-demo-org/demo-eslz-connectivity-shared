@@ -54,14 +54,6 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
     }
 
     # NTP
-    rule {
-      name                  = "ntp"
-      protocols             = ["UDP"]
-      source_addresses      = var.aks_egress_source_addresses
-      destination_addresses = var.aks_egress_network_allow.ntp_servers
-      destination_ports     = ["123"]
-    }
-
     # Optional extra TCP/443 destinations expressed as FQDNs (if you prefer network rules).
     dynamic "rule" {
       for_each = length(var.aks_egress_network_allow.extra_tcp_fqdns) > 0 ? [1] : []
