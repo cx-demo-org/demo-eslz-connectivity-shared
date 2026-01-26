@@ -25,6 +25,18 @@ All stacks are configured with a **local backend** and store state files outside
 
 > Note: This repo follows a “one stack = one folder = one state file” approach.
 
+## Disclaimer
+
+> [!IMPORTANT]
+> This repository uses **Azure Verified Modules (AVM)** and is intended as a reference implementation.
+> Any input values, defaults, and examples provided here are **samples only**.
+>
+> You are responsible for reviewing and adapting the configuration to meet your organization’s requirements (security, networking, naming, regions, compliance, etc.) before using it in any environment.
+
+> [!NOTE]
+> AVM modules may introduce changes over time (including breaking changes). The maintainers of this repository are not responsible for upstream module changes.
+> For AVM-related bugs or feature requests, please raise issues with the relevant AVM module repository.
+
 ## Stack layout
 
 ### `msft-vwan-prod/`
