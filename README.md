@@ -58,7 +58,7 @@ Creates the shared Virtual WAN.
 - Outputs:
 	- `virtual_wan_id`
 
-This output is consumed by both hub stacks via `terraform_remote_state`.
+The hubs attach to this vWAN by looking it up directly with `data.azurerm_virtual_wan`.
 
 ### `msft-vhub-prod/`
 Creates the **prod** secured virtual hub and Azure Firewall (Hub SKU).
@@ -68,9 +68,9 @@ Creates the **prod** secured virtual hub and Azure Firewall (Hub SKU).
 	- Resource group (prod hub RG)
 	- Virtual Hub
 	- Azure Firewall (`AZFW_Hub`)
-- Reads remote state:
-	- vWAN stack (`msft-vwan-prod`) to get `virtual_wan_id`
-	- firewall policy stack (`msft-fwpolicy-prod`) to get `firewall_policy_id`
+- Looks up existing resources:
+	- Virtual WAN (`data.azurerm_virtual_wan`)
+	- Firewall policy (`data.azurerm_firewall_policy`)
 
 ### `msft-vhub-dev/`
 Same as prod hub stack, but for **dev**.
@@ -95,9 +95,8 @@ Same as prod firewall policy stack, but for **dev**.
 ## How the stacks connect
 
 - `msft-vwan-prod` is deployed first.
-- `msft-vhub-prod` and `msft-vhub-dev` read the vWAN ID from `msft-vwan-prod` state.
-- `msft-vhub-prod` reads `firewall_policy_id` from `msft-fwpolicy-prod` state.
-- `msft-vhub-dev` reads `firewall_policy_id` from `msft-fwpolicy-dev` state.
+- `msft-vhub-prod` and `msft-vhub-dev` look up the existing vWAN directly (no dependency on terraform remote state).
+- Each hub looks up its firewall policy directly.
 
 ## Recommended workflow
 
