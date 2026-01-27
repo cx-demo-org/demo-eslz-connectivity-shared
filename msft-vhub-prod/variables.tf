@@ -31,7 +31,7 @@ variable "virtual_wan_name" {
 variable "hub_address_prefix" {
   description = "Address prefix for the hub (CIDR)."
   type        = string
-  default     = "10.2.0.0/16"
+  default     = "10.2.0.0/20"
 }
 
 variable "firewall_name" {
