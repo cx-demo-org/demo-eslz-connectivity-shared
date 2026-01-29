@@ -38,7 +38,15 @@ variable "aks_egress_fqdns" {
     # AKS/Microsoft Container Registry (MCR)
     "mcr.microsoft.com",
     "*.data.mcr.microsoft.com",
+    "*.cdn.mscr.io",
     "*.blob.core.windows.net",
+
+    # OS and agent bootstrap packages (Ubuntu + Microsoft package repos)
+    "archive.ubuntu.com",
+    "security.ubuntu.com",
+    "azure.archive.ubuntu.com",
+    "packages.microsoft.com",
+    "download.microsoft.com",
 
     # Azure Resource Manager + AAD (cluster operations)
     "management.azure.com",
