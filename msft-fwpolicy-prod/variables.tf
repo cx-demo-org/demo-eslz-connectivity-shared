@@ -35,9 +35,13 @@ variable "aks_egress_fqdns" {
   description = "FQDNs required for AKS + platform services (Defender/Monitoring) when routing egress via Azure Firewall."
   type        = list(string)
   default = [
+    # AKS control plane (region-specific FQDNs are appended in locals)
+    "*.azmk8s.io",
+
     # AKS/Microsoft Container Registry (MCR)
     "mcr.microsoft.com",
     "*.data.mcr.microsoft.com",
+    "mcr-0001.mcr-msedge.net",
     "*.cdn.mscr.io",
     "*.blob.core.windows.net",
 
@@ -53,13 +57,28 @@ variable "aks_egress_fqdns" {
     "login.microsoftonline.com",
     "graph.microsoft.com",
 
+    # AKS binaries (CNI/kubenet) repositories
+    "acs-mirror.azureedge.net",
+    "packages.aks.azure.com",
+
     # Monitoring / Log Analytics agent ingestion (wildcards kept broad; tighten if you pin workspace / region)
     "*.ods.opinsights.azure.com",
     "*.oms.opinsights.azure.com",
     "*.monitoring.azure.com",
+    "dc.services.visualstudio.com",
+    "*.in.applicationinsights.azure.com",
+    "global.handler.control.monitor.azure.com",
+    "*.handler.control.monitor.azure.com",
+    "*.ingest.monitor.azure.com",
+    "*.metrics.ingest.monitor.azure.com",
+
+    # Azure Policy add-on (Gatekeeper)
+    "data.policy.core.windows.net",
+    "store.policy.core.windows.net",
 
     # Defender for Cloud (security agent/telemetry)
-    "*.securitycenter.windows.com"
+    "*.securitycenter.windows.com",
+    "*.cloud.defender.microsoft.com"
   ]
 }
 

@@ -1,3 +1,12 @@
+locals {
+  aks_control_plane_service_tag = "AzureCloud.${var.location}"
+  aks_egress_fqdns_computed = [
+    "*.hcp.${var.location}.azmk8s.io",
+    "${var.location}.handler.control.monitor.azure.com",
+    "${var.location}.dp.kubernetesconfiguration.azure.com",
+  ]
+}
+
 resource "azurerm_firewall_policy" "this" {
   name                = var.firewall_policy_name
   location            = var.location
@@ -32,7 +41,25 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
         port = 443
       }
 
-      destination_fqdns = var.aks_egress_fqdns
+      destination_fqdns = distinct(concat(var.aks_egress_fqdns, local.aks_egress_fqdns_computed))
+    }
+
+    rule {
+      name = "aks-fqdn-tag"
+
+      source_addresses = var.aks_egress_source_addresses
+
+      protocols {
+        type = "Http"
+        port = 80
+      }
+
+      protocols {
+        type = "Https"
+        port = 443
+      }
+
+      destination_fqdn_tags = ["AzureKubernetesService"]
     }
   }
 
@@ -40,6 +67,23 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
     name     = "aks-network"
     priority = 210
     action   = "Allow"
+
+    # AKS control plane tunnel ports (required for non-private clusters without konnectivity).
+    rule {
+      name                  = "aks-controlplane-udp-1194"
+      protocols             = ["UDP"]
+      source_addresses      = var.aks_egress_source_addresses
+      destination_addresses = [local.aks_control_plane_service_tag]
+      destination_ports     = ["1194"]
+    }
+
+    rule {
+      name                  = "aks-controlplane-tcp-9000"
+      protocols             = ["TCP"]
+      source_addresses      = var.aks_egress_source_addresses
+      destination_addresses = [local.aks_control_plane_service_tag]
+      destination_ports     = ["9000"]
+    }
 
     # DNS
     rule {
