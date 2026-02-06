@@ -33,7 +33,7 @@ firewall_policies = {
       # Existing policy also has an empty placeholder rule collection group named "baseline".
       # Keep it managed to avoid import-time drift.
       baseline = {
-        priority = 500
+        priority                     = 500
         application_rule_collections = {}
         network_rule_collections     = {}
       }

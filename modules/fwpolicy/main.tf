@@ -102,7 +102,7 @@ locals {
     }
   } : {}
 
-  rule_collection_groups_custom = try(tomap(var.rule_collection_groups), {})
+  rule_collection_groups_custom    = try(tomap(var.rule_collection_groups), {})
   rule_collection_groups_effective = merge(local.aks_rule_collection_groups, local.rule_collection_groups_custom)
 }
 
