@@ -61,8 +61,9 @@ jobs:
       ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
       TFSTATE_SUBSCRIPTION_ID: ${{ vars.TFSTATE_SUBSCRIPTION_ID }}
 
-      TF_VAR_hub_subscription_id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-      TF_VAR_hub_tenant_id: ${{ vars.ARM_TENANT_ID }}
+      # Target subscriptions/tenants (provider config). Prefer HUB_* if defined.
+      TF_VAR_hub_subscription_id: ${{ vars.HUB_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_hub_tenant_id: ${{ vars.HUB_TENANT_ID || vars.ARM_TENANT_ID }}
       TF_VAR_virtual_wan_subscription_id: ${{ vars.VIRTUAL_WAN_SUBSCRIPTION_ID }}
       TF_VAR_virtual_wan_tenant_id: ${{ vars.VIRTUAL_WAN_TENANT_ID }}
 
@@ -159,8 +160,9 @@ jobs:
       ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
       TFSTATE_SUBSCRIPTION_ID: ${{ vars.TFSTATE_SUBSCRIPTION_ID }}
 
-      TF_VAR_hub_subscription_id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-      TF_VAR_hub_tenant_id: ${{ vars.ARM_TENANT_ID }}
+      # Target subscriptions/tenants (provider config). Prefer HUB_* if defined.
+      TF_VAR_hub_subscription_id: ${{ vars.HUB_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_hub_tenant_id: ${{ vars.HUB_TENANT_ID || vars.ARM_TENANT_ID }}
       TF_VAR_virtual_wan_subscription_id: ${{ vars.VIRTUAL_WAN_SUBSCRIPTION_ID }}
       TF_VAR_virtual_wan_tenant_id: ${{ vars.VIRTUAL_WAN_TENANT_ID }}
 
