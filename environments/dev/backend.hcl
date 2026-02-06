@@ -1,4 +1,5 @@
 resource_group_name  = "msft-tfstate-dev-rg"
 storage_account_name = "msfttfstatedev001"
+subscription_id      = "e3cb4605-49f4-472c-bf66-085b7510a36e"
 container_name       = "tfstate"
 key                  = "msft-lz-connectivity/environments/dev/terraform.tfstate"

@@ -8,6 +8,14 @@ existing_resource_groups = {
   }
 }
 
+# Target subscription/tenant for hub resources (vHub, Azure Firewall, Firewall Policy, etc.)
+hub_subscription_id = "2f69b2b1-5fe0-487d-8c82-52f5edeb454e"
+hub_tenant_id       = "9a9712e7-1382-4528-8495-b52ae7688acb"
+
+# vWAN subscription/tenant (prod owns/creates the vWAN in this state).
+virtual_wan_subscription_id = "2f69b2b1-5fe0-487d-8c82-52f5edeb454e"
+virtual_wan_tenant_id       = "9a9712e7-1382-4528-8495-b52ae7688acb"
+
 # In the target design, vWAN is created once (here in prod).
 # If the vWAN already exists, either:
 # - import it into this env state, or

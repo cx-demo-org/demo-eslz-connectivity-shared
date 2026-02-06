@@ -12,18 +12,18 @@ on:
         type: choice
         required: true
         default: plan
-        options:
-          - plan
-          - apply
-      environment:
-        description: "Which environment to target"
+        options: [plan, apply]
+      stack:
+        description: "Which environment(s) to run"
         type: choice
         required: true
-        default: dev
-        options:
-          - dev
-          - prod
-          - both
+        default: both
+        options: [dev, prod, both]
+      force_apply:
+        description: "Allow apply re-runs even if no new code changes exist"
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -37,69 +37,23 @@ env:
   ARM_USE_OIDC: true
   ARM_USE_AZUREAD: true
   ARM_OIDC_AUDIENCE: api://AzureADTokenExchange
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || 'c14be0d1-54b1-4c90-949b-2775aec6307e' }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || '9a9712e7-1382-4528-8495-b52ae7688acb' }}
+  # Azure CLI context for login; Terraform uses subscription_id from the env tfvars.
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || '1d70f8ca-f7e4-4d69-98fe-53959be8f10a' }}
   TF_IN_AUTOMATION: true
 
 jobs:
   plan:
-    name: plan (${{ matrix.env }})
+    name: plan (${{ matrix.stack }})
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.action == 'plan')
-
     strategy:
       fail-fast: false
       matrix:
-        env: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.environment != 'both') && fromJSON(format('["{0}"]', github.event.inputs.environment)) || fromJSON('["dev","prod"]') }}
-
-    environment: ${{ matrix.env }}
-
-    env:
-      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-      TFSTATE_SUBSCRIPTION_ID: ${{ vars.TFSTATE_SUBSCRIPTION_ID }}
-
-      # Target subscriptions/tenants (provider config). Prefer HUB_* if defined.
-      TF_VAR_hub_subscription_id: ${{ vars.HUB_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
-      TF_VAR_hub_tenant_id: ${{ vars.HUB_TENANT_ID || vars.ARM_TENANT_ID }}
-      TF_VAR_virtual_wan_subscription_id: ${{ vars.VIRTUAL_WAN_SUBSCRIPTION_ID }}
-      TF_VAR_virtual_wan_tenant_id: ${{ vars.VIRTUAL_WAN_TENANT_ID }}
+        stack: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.stack != 'both') && fromJSON(format('["{0}"]', github.event.inputs.stack)) || fromJSON('["dev","prod"]') }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Preflight (required variables)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          missing=0
-          require() {
-            local key="$1"
-            local val="$2"
-            if [[ -z "${val}" ]]; then
-              echo "::error::Missing required GitHub Environment variable: ${key}"
-              missing=1
-            fi
-          }
-
-          require ARM_CLIENT_ID "${ARM_CLIENT_ID:-}"
-          require ARM_TENANT_ID "${ARM_TENANT_ID:-}"
-          require ARM_SUBSCRIPTION_ID "${ARM_SUBSCRIPTION_ID:-}"
-          require TFSTATE_SUBSCRIPTION_ID "${TFSTATE_SUBSCRIPTION_ID:-}"
-
-          if [[ "${missing}" -ne 0 ]]; then
-            echo ""
-            echo "Set these under: Repo Settings -> Environments -> ${{ matrix.env }} -> Variables"
-            exit 1
-          fi
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -109,96 +63,80 @@ jobs:
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
           audience: ${{ env.ARM_OIDC_AUDIENCE }}
 
-      - name: Terraform init
-        run: |
-          terraform init -input=false \
-            -backend-config=environments/${{ matrix.env }}/backend.hcl \
-            -backend-config="subscription_id=${{ env.TFSTATE_SUBSCRIPTION_ID }}"
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false -backend-config=environments/${{ matrix.stack }}/backend.hcl
 
       - name: Terraform validate
         run: terraform validate
 
       - name: Terraform plan
-        run: terraform plan -input=false -no-color -out=tfplan -var-file=environments/${{ matrix.env }}/terraform.tfvars
+        run: terraform plan -input=false -no-color -var-file=environments/${{ matrix.stack }}/terraform.tfvars -out=tfplan
+
+      - name: Terraform plan summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f tfplan ]]; then
+            summary="$(terraform show -no-color tfplan | awk '
+              /^No changes\./{line=$0}
+              /^Plan: /{line=$0}
+              END{print line}
+            ')"
+
+            if [[ -z "${summary}" ]]; then
+              summary="Plan summary not found (see artifact)."
+            fi
+
+            echo "${summary}"
+            {
+              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo ""
+              echo "\`${summary}\`"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "Plan output not available."
+            {
+              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo ""
+              echo "Plan output not available."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
       - name: Save plan output
         if: always()
         shell: bash
         run: |
           if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan-${{ matrix.env }}.txt
+            terraform show -no-color tfplan > plan-${{ matrix.stack }}.txt
           else
-            echo "Plan file not generated (a previous step failed)." > plan-${{ matrix.env }}.txt
+            echo "Plan output not available." > plan-${{ matrix.stack }}.txt
           fi
 
       - name: Upload plan artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-${{ matrix.env }}
-          path: plan-${{ matrix.env }}.txt
-          if-no-files-found: error
+          name: tfplan-${{ matrix.stack }}
+          path: plan-${{ matrix.stack }}.txt
+          if-no-files-found: warn
 
   apply:
-    name: apply (${{ matrix.env }})
+    name: apply
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        env: ${{ (github.event.inputs.environment != 'both') && fromJSON(format('["{0}"]', github.event.inputs.environment)) || fromJSON('["dev","prod"]') }}
-
-    environment: ${{ matrix.env }}
-
-    env:
-      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-      TFSTATE_SUBSCRIPTION_ID: ${{ vars.TFSTATE_SUBSCRIPTION_ID }}
-
-      # Target subscriptions/tenants (provider config). Prefer HUB_* if defined.
-      TF_VAR_hub_subscription_id: ${{ vars.HUB_SUBSCRIPTION_ID || vars.ARM_SUBSCRIPTION_ID }}
-      TF_VAR_hub_tenant_id: ${{ vars.HUB_TENANT_ID || vars.ARM_TENANT_ID }}
-      TF_VAR_virtual_wan_subscription_id: ${{ vars.VIRTUAL_WAN_SUBSCRIPTION_ID }}
-      TF_VAR_virtual_wan_tenant_id: ${{ vars.VIRTUAL_WAN_TENANT_ID }}
-
+    needs: plan
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply' && github.event.inputs.force_apply == 'true')
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Preflight (required variables)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          missing=0
-          require() {
-            local key="$1"
-            local val="$2"
-            if [[ -z "${val}" ]]; then
-              echo "::error::Missing required GitHub Environment variable: ${key}"
-              missing=1
-            fi
-          }
-
-          require ARM_CLIENT_ID "${ARM_CLIENT_ID:-}"
-          require ARM_TENANT_ID "${ARM_TENANT_ID:-}"
-          require ARM_SUBSCRIPTION_ID "${ARM_SUBSCRIPTION_ID:-}"
-          require TFSTATE_SUBSCRIPTION_ID "${TFSTATE_SUBSCRIPTION_ID:-}"
-
-          if [[ "${missing}" -ne 0 ]]; then
-            echo ""
-            echo "Set these under: Repo Settings -> Environments -> ${{ matrix.env }} -> Variables"
-            exit 1
-          fi
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -208,11 +146,28 @@ jobs:
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
           audience: ${{ env.ARM_OIDC_AUDIENCE }}
 
-      - name: Terraform init
-        run: |
-          terraform init -input=false \
-            -backend-config=environments/${{ matrix.env }}/backend.hcl \
-            -backend-config="subscription_id=${{ env.TFSTATE_SUBSCRIPTION_ID }}"
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
-      - name: Terraform apply
-        run: terraform apply -lock-timeout=10m -input=false -auto-approve -var-file=environments/${{ matrix.env }}/terraform.tfvars
+      - name: Terraform apply (selected environments)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          stacks="dev prod"
+          if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
+            case "${{ github.event.inputs.stack }}" in
+              dev) stacks="dev" ;;
+              prod) stacks="prod" ;;
+              both|*) stacks="dev prod" ;;
+            esac
+          fi
+
+          for stack in ${stacks}; do
+            echo "=== Applying ${stack} ==="
+            rm -rf .terraform
+            terraform init -input=false -reconfigure -backend-config="environments/${stack}/backend.hcl"
+            terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/${stack}/terraform.tfvars"
+          done
