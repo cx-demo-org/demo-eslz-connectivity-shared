@@ -1,0 +1,115 @@
+existing_resource_groups = {
+  dev_hub = {
+    name = "msft-vhub-dev-rg"
+  }
+}
+
+# vWAN is created once (typically in prod) and referenced from dev.
+existing_virtual_wan = {
+  name                = "msft-prod-sea-vwan"
+  resource_group_name = "msft-prod-connectivity-rg"
+}
+
+firewall_policies = {
+  dev = {
+    name               = "msft-vhub-dev-firewall-policy"
+    resource_group_key = "dev_hub"
+    location           = "southeastasia"
+    tags = {
+      environment = "dev"
+      workload    = "msft-fwpolicy"
+    }
+
+    # Rules are explicitly managed via tfvars so end users can customize them.
+    rule_collection_groups = {
+      # Existing policy also has an empty placeholder rule collection group named "baseline".
+      # Keep it managed to avoid import-time drift.
+      baseline = {
+        priority = 500
+        application_rule_collections = {}
+        network_rule_collections     = {}
+      }
+
+      "aks-egress" = {
+        priority = 200
+
+        application_rule_collections = {
+          "aks-app" = {
+            priority = 200
+            action   = "Allow"
+
+            rules = [
+              {
+                name             = "aks-platform-fqdns"
+                source_addresses = ["*"]
+                protocols        = [{ type = "Https", port = 443 }]
+                destination_fqdns = [
+                  "mcr.microsoft.com",
+                  "*.data.mcr.microsoft.com",
+                  "*.blob.core.windows.net",
+                  "management.azure.com",
+                  "login.microsoftonline.com",
+                  "graph.microsoft.com",
+                  "*.ods.opinsights.azure.com",
+                  "*.oms.opinsights.azure.com",
+                  "*.monitoring.azure.com",
+                  "*.securitycenter.windows.com",
+                ]
+              },
+            ]
+          }
+        }
+
+        network_rule_collections = {
+          "aks-network" = {
+            priority = 210
+            action   = "Allow"
+
+            rules = [
+              {
+                name                  = "dns-udp"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["53"]
+              },
+              {
+                name                  = "dns-tcp"
+                protocols             = ["TCP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["53"]
+              },
+              {
+                name                  = "ntp"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["123"]
+              },
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+
+virtual_hubs = {
+  dev = {
+    name               = "msft-vhub-dev"
+    resource_group_key = "dev_hub"
+    location           = "southeastasia"
+    address_prefix     = "192.168.0.0/20"
+
+    tags = {
+      environment = "dev"
+      workload    = "msft-vhub"
+    }
+
+    firewall = {
+      name                = "msft-vhub-dev-firewall"
+      firewall_policy_key = "dev"
+    }
+  }
+}
