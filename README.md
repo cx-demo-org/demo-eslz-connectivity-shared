@@ -12,6 +12,66 @@
 
 # msft-eslz-connectivity
 
+## New (preferred) layout
+
+This repo now supports a **single root Terraform configuration** driven entirely by environment-specific tfvars.
+
+- `modules/`
+	- `modules/vwan`: Virtual WAN (AVM)
+	- `modules/fwpolicy`: Azure Firewall Policy + AKS egress baseline rules
+	- `modules/vhub`: Virtual Hub (AVM) + optional secured hub Azure Firewall (AZFW_Hub)
+- `environments/`
+	- `environments/dev/backend.hcl` + `environments/dev/terraform.tfvars`
+	- `environments/prod/backend.hcl` + `environments/prod/terraform.tfvars`
+
+Key design points:
+- All instances are **tfvars-driven** (`virtual_hubs` and `firewall_policies` are maps).
+- vWAN is intended to be created **once** (typically in prod) and referenced from other envs.
+- No subscription/tenant IDs are hardcoded in Terraform code; authentication is expected via Azure CLI / OIDC / `ARM_*` env vars.
+
+Multi-subscription support:
+- If your **hub resources** (vHub / Azure Firewall / Firewall Policy) and your **vWAN** live in different subscriptions, set:
+	- `hub_subscription_id` / `hub_tenant_id`
+	- `virtual_wan_subscription_id` / `virtual_wan_tenant_id` (optional; defaults to hub values)
+
+Tip: keep IDs out of committed tfvars by passing them via environment variables, e.g. `TF_VAR_hub_subscription_id`.
+
+Input conventions:
+- Prefer **imports** over "create flags". If something already exists and you want Terraform to manage it, import it into the environment state.
+- For migration/partial ownership:
+	- Use `resource_groups` for RGs you want Terraform to manage.
+	- Use `existing_resource_groups` for RGs you only want to data-lookup.
+	- Use `virtual_wan` (managed) **or** `existing_virtual_wan` (lookup) — exactly one must be set.
+	- Use `firewall_policies` for policies managed here; use `existing_firewall_policies` for lookup-only policies.
+
+### How to run
+
+From the repo root:
+
+- Dev:
+	- `terraform init -backend-config=environments/dev/backend.hcl`
+	- `terraform plan -var-file=environments/dev/terraform.tfvars`
+	- `terraform apply -var-file=environments/dev/terraform.tfvars`
+
+- Prod:
+	- `terraform init -backend-config=environments/prod/backend.hcl`
+	- `terraform plan -var-file=environments/prod/terraform.tfvars`
+	- `terraform apply -var-file=environments/prod/terraform.tfvars`
+
+### State / migration notes
+
+This refactor introduces **new state keys** under `msft-lz-connectivity/environments/{dev,prod}`.
+
+If you already deployed resources using the legacy stack folders:
+- Fastest path: **destroy legacy stacks**, then apply the new env configuration.
+- No-downtime path: **import** existing resources into the new env state (requires careful mapping of resource IDs).
+
+> Tip: the `resource_groups` input supports `create=false` so you can data-lookup existing RGs while migrating.
+
+> Updated: the repo no longer uses `create=true/false`. Use `existing_resource_groups` (lookup) or import the RG into state if you want it managed.
+
+## Legacy stack layout (kept for reference)
+
 This repository was previously organized under a top-level folder named `msft-lz-connectivity/`.
 
 As part of a repo restructure, the connectivity stacks were moved to the repository root:

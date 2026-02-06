@@ -12,17 +12,23 @@ on:
         type: choice
         required: true
         default: plan
-        options:
-          - plan
-          - apply
+        options: [plan, apply]
+      stack:
+        description: "Which environment(s) to run"
+        type: choice
+        required: true
+        default: both
+        options: [dev, prod, both]
+      force_apply:
+        description: "Allow apply re-runs even if no new code changes exist"
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
   id-token: write
-  pull-requests: write
 
-# Avoid multiple runs of this workflow stomping on each other.
-# (Per-stack concurrency below provides the stronger guarantee.)
 concurrency:
   group: tf-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -30,275 +36,105 @@ concurrency:
 env:
   ARM_USE_OIDC: true
   ARM_USE_AZUREAD: true
+  ARM_OIDC_AUDIENCE: api://AzureADTokenExchange
   ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || 'c14be0d1-54b1-4c90-949b-2775aec6307e' }}
   ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || '9a9712e7-1382-4528-8495-b52ae7688acb' }}
-  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || '2f69b2b1-5fe0-487d-8c82-52f5edeb454e' }}
+  # Azure CLI context for login; Terraform uses subscription_id from the env tfvars.
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || '1d70f8ca-f7e4-4d69-98fe-53959be8f10a' }}
   TF_IN_AUTOMATION: true
 
 jobs:
-  detect-changes:
-    name: detect changed stacks
+  plan:
+    name: plan (${{ matrix.stack }})
     runs-on: ubuntu-latest
-
-    outputs:
-      # Individual stacks
-      vwan_prod: ${{ steps.filter.outputs.vwan_prod }}
-      fwpolicy_dev: ${{ steps.filter.outputs.fwpolicy_dev }}
-      vhub_dev: ${{ steps.filter.outputs.vhub_dev }}
-      fwpolicy_prod: ${{ steps.filter.outputs.fwpolicy_prod }}
-      vhub_prod: ${{ steps.filter.outputs.vhub_prod }}
-
-      # Grouping helpers
-      shared: ${{ steps.filter.outputs.shared }}
-      dev: ${{ steps.filter.outputs.dev }}
-      prod: ${{ steps.filter.outputs.prod }}
-
-      # Workflow-only changes should never trigger apply.
-      workflow_changed: ${{ steps.filter.outputs.workflow_changed }}
-      infra_changed: ${{ steps.infra.outputs.infra_changed }}
-
-      # Apply stack lists (JSON arrays) derived from the above booleans.
-      apply_dev_stacks_json: ${{ steps.set-matrix.outputs.apply_dev_stacks_json }}
-      apply_prod_stacks_json: ${{ steps.set-matrix.outputs.apply_prod_stacks_json }}
-
-      # Convenience flags for ordered dev apply.
-      apply_dev_fwpolicy: ${{ steps.filter.outputs.fwpolicy_dev }}
-      apply_dev_vhub: ${{ steps.filter.outputs.vhub_dev }}
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.stack != 'both') && fromJSON(format('["{0}"]', github.event.inputs.stack)) || fromJSON('["dev","prod"]') }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Filter paths
-        id: filter
-        uses: dorny/paths-filter@v3
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
         with:
-          filters: |
-            workflow_changed:
-              - '.github/workflows/**'
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+          audience: ${{ env.ARM_OIDC_AUDIENCE }}
 
-            # Shared root changes that should trigger (almost) everything.
-            # Stacks now live at repo root.
-            shared:
-              - '**'
-              - '!.github/**'
-              - '!cx-lz-management/**'
-              - '!msft-vwan-prod/**'
-              - '!msft-fwpolicy-dev/**'
-              - '!msft-vhub-dev/**'
-              - '!msft-fwpolicy-prod/**'
-              - '!msft-vhub-prod/**'
-              # NOTE: workflow changes must not trigger infra apply.
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
-            vwan_prod:
-              - 'msft-vwan-prod/**'
-            fwpolicy_dev:
-              - 'msft-fwpolicy-dev/**'
-            vhub_dev:
-              - 'msft-vhub-dev/**'
-            fwpolicy_prod:
-              - 'msft-fwpolicy-prod/**'
-            vhub_prod:
-              - 'msft-vhub-prod/**'
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive
 
-            dev:
-              - 'msft-fwpolicy-dev/**'
-              - 'msft-vhub-dev/**'
-            prod:
-              - 'msft-vwan-prod/**'
-              - 'msft-fwpolicy-prod/**'
-              - 'msft-vhub-prod/**'
+      - name: Terraform init
+        run: terraform init -input=false -backend-config=environments/${{ matrix.stack }}/backend.hcl
 
-      - name: Compute infra_changed
-        id: infra
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: terraform plan -input=false -no-color -var-file=environments/${{ matrix.stack }}/terraform.tfvars -out=tfplan
+
+      - name: Terraform plan summary
+        if: always()
         shell: bash
         run: |
-          infra=false
-          if [[ "${{ steps.filter.outputs.shared }}" == 'true' || \
-                "${{ steps.filter.outputs.vwan_prod }}" == 'true' || \
-                "${{ steps.filter.outputs.fwpolicy_dev }}" == 'true' || \
-                "${{ steps.filter.outputs.vhub_dev }}" == 'true' || \
-                "${{ steps.filter.outputs.fwpolicy_prod }}" == 'true' || \
-                "${{ steps.filter.outputs.vhub_prod }}" == 'true' ]]; then
-            infra=true
-          fi
-          echo "infra_changed=${infra}" >> "$GITHUB_OUTPUT"
+          if [[ -f tfplan ]]; then
+            summary="$(terraform show -no-color tfplan | awk '
+              /^No changes\./{line=$0}
+              /^Plan: /{line=$0}
+              END{print line}
+            ')"
 
-      - name: Set apply matrices
-        id: set-matrix
-        shell: bash
-        run: |
-          # Build minimal apply matrix lists.
-          # Rules:
-          # - vhub-dev changes => apply fwpolicy-dev and vhub-dev (vhub depends on fwpolicy)
-          # - fwpolicy-dev changes => apply fwpolicy-dev and vhub-dev (policy can impact hub routing)
-          # - vwan-prod changes => apply vwan-prod and then prod dependents
-          # - vhub-prod changes => apply vhub-prod and fwpolicy-prod
-          # - fwpolicy-prod changes => apply fwpolicy-prod and vhub-prod
-          # - shared changes => apply everything
-
-          apply_dev='[]'
-          apply_prod='[]'
-
-          if [[ "${{ steps.filter.outputs.shared }}" == 'true' ]]; then
-            apply_dev='["msft-vwan-prod","msft-fwpolicy-dev","msft-vhub-dev"]'
-            apply_prod='["msft-fwpolicy-prod","msft-vhub-prod"]'
-          else
-            # dev
-            if [[ "${{ steps.filter.outputs.fwpolicy_dev }}" == 'true' || "${{ steps.filter.outputs.vhub_dev }}" == 'true' ]]; then
-              apply_dev='["msft-fwpolicy-dev","msft-vhub-dev"]'
+            if [[ -z "${summary}" ]]; then
+              summary="Plan summary not found (see artifact)."
             fi
 
-            # prod
-            if [[ "${{ steps.filter.outputs.vwan_prod }}" == 'true' ]]; then
-              apply_prod='["msft-vwan-prod","msft-fwpolicy-prod","msft-vhub-prod"]'
-            elif [[ "${{ steps.filter.outputs.fwpolicy_prod }}" == 'true' || "${{ steps.filter.outputs.vhub_prod }}" == 'true' ]]; then
-              apply_prod='["msft-fwpolicy-prod","msft-vhub-prod"]'
-            fi
-          fi
-
-          echo "apply_dev_stacks_json=${apply_dev}" >> "$GITHUB_OUTPUT"
-          echo "apply_prod_stacks_json=${apply_prod}" >> "$GITHUB_OUTPUT"
-
-  # -----------------
-  # Plan jobs (selective)
-  # -----------------
-
-  plan-vwan:
-    name: plan (msft-vwan-prod)
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    # PRs: plan everything. Push to main: always plan WAN first so downstream stacks
-    # can read remote state safely and we maintain a consistent ordering.
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name != 'pull_request' &&
-        (needs.detect-changes.outputs.shared == 'true' ||
-         needs.detect-changes.outputs.vwan_prod == 'true' ||
-         needs.detect-changes.outputs.dev == 'true' ||
-         needs.detect-changes.outputs.prod == 'true'))
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-vwan-prod
-      cancel-in-progress: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-vwan-prod
-        run: terraform init -input=false
-
-      - name: Terraform fmt check
-        working-directory: msft-vwan-prod
-        run: terraform fmt -check -recursive
-
-      - name: Terraform validate
-        working-directory: msft-vwan-prod
-        run: terraform validate
-
-      - name: Terraform plan
-        working-directory: msft-vwan-prod
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
+            echo "${summary}"
+            {
+              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo ""
+              echo "\`${summary}\`"
+            } >> "${GITHUB_STEP_SUMMARY}"
           else
-            terraform plan -input=false -no-color -out=tfplan
+            echo "Plan output not available."
+            {
+              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo ""
+              echo "Plan output not available."
+            } >> "${GITHUB_STEP_SUMMARY}"
           fi
 
-      - name: Ensure plan output exists
+      - name: Save plan output
         if: always()
-        working-directory: msft-vwan-prod
         shell: bash
         run: |
-          if [[ -f plan.txt ]]; then
-            exit 0
-          fi
-
           if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan.txt
-            exit 0
+            terraform show -no-color tfplan > plan-${{ matrix.stack }}.txt
+          else
+            echo "Plan output not available." > plan-${{ matrix.stack }}.txt
           fi
-
-          echo "Plan output not available (terraform plan did not produce a tfplan file)." > plan.txt
 
       - name: Upload plan artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-msft-vwan-prod
-          path: msft-vwan-prod/plan.txt
+          name: tfplan-${{ matrix.stack }}
+          path: plan-${{ matrix.stack }}.txt
           if-no-files-found: warn
 
-      - name: Comment plan on PR (summary)
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const stack = 'msft-vwan-prod';
-            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
-            let plan = '';
-            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
-            const max = 60000;
-            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
-            const marker = `<!-- tfplan:${stack} -->`;
-            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              per_page: 100
-            });
-
-            const existing = comments.find(c => (c.body || '').includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body
-              });
-            }
-
-  plan-fwpolicy-prod:
-    name: plan (msft-fwpolicy-prod)
+  apply:
+    name: apply
     runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - plan-vwan
+    needs: plan
     if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name != 'pull_request' &&
-        (needs.detect-changes.outputs.shared == 'true' ||
-         needs.detect-changes.outputs.fwpolicy_prod == 'true' ||
-         needs.detect-changes.outputs.vhub_prod == 'true'))
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-fwpolicy-prod
-      cancel-in-progress: true
-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply' && github.event.inputs.force_apply == 'true')
     steps:
       - uses: actions/checkout@v4
 
@@ -308,587 +144,30 @@ jobs:
           client-id: ${{ env.ARM_CLIENT_ID }}
           tenant-id: ${{ env.ARM_TENANT_ID }}
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+          audience: ${{ env.ARM_OIDC_AUDIENCE }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
 
-      - name: Terraform init
-        working-directory: msft-fwpolicy-prod
-        run: terraform init -input=false
-
-      - name: Terraform fmt check
-        working-directory: msft-fwpolicy-prod
-        run: terraform fmt -check -recursive
-
-      - name: Terraform validate
-        working-directory: msft-fwpolicy-prod
-        run: terraform validate
-
-      - name: Terraform plan
-        working-directory: msft-fwpolicy-prod
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          else
-            terraform plan -input=false -no-color -out=tfplan
-          fi
-
-      - name: Ensure plan output exists
-        if: always()
-        working-directory: msft-fwpolicy-prod
+      - name: Terraform apply (selected environments)
         shell: bash
         run: |
-          if [[ -f plan.txt ]]; then
-            exit 0
+          set -euo pipefail
+
+          stacks="dev prod"
+          if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
+            case "${{ github.event.inputs.stack }}" in
+              dev) stacks="dev" ;;
+              prod) stacks="prod" ;;
+              both|*) stacks="dev prod" ;;
+            esac
           fi
 
-          if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan.txt
-            exit 0
-          fi
-
-          echo "Plan output not available (terraform plan did not produce a tfplan file)." > plan.txt
-
-      - name: Upload plan artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-msft-fwpolicy-prod
-          path: msft-fwpolicy-prod/plan.txt
-          if-no-files-found: warn
-
-      - name: Comment plan on PR (summary)
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const stack = 'msft-fwpolicy-prod';
-            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
-            let plan = '';
-            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
-            const max = 60000;
-            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
-            const marker = `<!-- tfplan:${stack} -->`;
-            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
-            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
-            const existing = comments.find(c => (c.body || '').includes(marker));
-            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
-
-  plan-fwpolicy-dev:
-    name: plan (msft-fwpolicy-dev)
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - plan-vwan
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name != 'pull_request' &&
-        (needs.detect-changes.outputs.shared == 'true' ||
-         needs.detect-changes.outputs.fwpolicy_dev == 'true' ||
-         needs.detect-changes.outputs.vhub_dev == 'true'))
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-fwpolicy-dev
-      cancel-in-progress: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-fwpolicy-dev
-        run: terraform init -input=false
-
-      - name: Terraform fmt check
-        working-directory: msft-fwpolicy-dev
-        run: terraform fmt -check -recursive
-
-      - name: Terraform validate
-        working-directory: msft-fwpolicy-dev
-        run: terraform validate
-
-      - name: Terraform plan
-        working-directory: msft-fwpolicy-dev
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          else
-            terraform plan -input=false -no-color -out=tfplan
-          fi
-
-      - name: Ensure plan output exists
-        if: always()
-        working-directory: msft-fwpolicy-dev
-        shell: bash
-        run: |
-          if [[ -f plan.txt ]]; then
-            exit 0
-          fi
-
-          if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan.txt
-            exit 0
-          fi
-
-          echo "Plan output not available (terraform plan did not produce a tfplan file)." > plan.txt
-
-      - name: Upload plan artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-msft-fwpolicy-dev
-          path: msft-fwpolicy-dev/plan.txt
-          if-no-files-found: warn
-
-      - name: Comment plan on PR (summary)
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const stack = 'msft-fwpolicy-dev';
-            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
-            let plan = '';
-            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
-            const max = 60000;
-            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
-            const marker = `<!-- tfplan:${stack} -->`;
-            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
-            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
-            const existing = comments.find(c => (c.body || '').includes(marker));
-            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
-
-  plan-vhub-prod:
-    name: plan (msft-vhub-prod)
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - plan-fwpolicy-prod
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name != 'pull_request' &&
-        (needs.detect-changes.outputs.shared == 'true' ||
-         needs.detect-changes.outputs.fwpolicy_prod == 'true' ||
-         needs.detect-changes.outputs.vhub_prod == 'true'))
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-vhub-prod
-      cancel-in-progress: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-vhub-prod
-        run: terraform init -input=false
-
-      - name: Terraform fmt check
-        working-directory: msft-vhub-prod
-        run: terraform fmt -check -recursive
-
-      - name: Terraform validate
-        working-directory: msft-vhub-prod
-        run: terraform validate
-
-      - name: Terraform plan
-        working-directory: msft-vhub-prod
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          else
-            terraform plan -input=false -no-color -out=tfplan
-          fi
-
-      - name: Ensure plan output exists
-        if: always()
-        working-directory: msft-vhub-prod
-        shell: bash
-        run: |
-          if [[ -f plan.txt ]]; then
-            exit 0
-          fi
-
-          if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan.txt
-            exit 0
-          fi
-
-          echo "Plan output not available (terraform plan did not produce a tfplan file)." > plan.txt
-
-      - name: Upload plan artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-msft-vhub-prod
-          path: msft-vhub-prod/plan.txt
-          if-no-files-found: warn
-
-      - name: Comment plan on PR (summary)
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const stack = 'msft-vhub-prod';
-            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
-            let plan = '';
-            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
-            const max = 60000;
-            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
-            const marker = `<!-- tfplan:${stack} -->`;
-            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
-            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
-            const existing = comments.find(c => (c.body || '').includes(marker));
-            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
-
-  plan-vhub-dev:
-    name: plan (msft-vhub-dev)
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - plan-fwpolicy-dev
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name != 'pull_request' &&
-        (needs.detect-changes.outputs.shared == 'true' ||
-         needs.detect-changes.outputs.fwpolicy_dev == 'true' ||
-         needs.detect-changes.outputs.vhub_dev == 'true'))
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-vhub-dev
-      cancel-in-progress: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-vhub-dev
-        run: terraform init -input=false
-
-      - name: Terraform fmt check
-        working-directory: msft-vhub-dev
-        run: terraform fmt -check -recursive
-
-      - name: Terraform validate
-        working-directory: msft-vhub-dev
-        run: terraform validate
-
-      - name: Terraform plan
-        working-directory: msft-vhub-dev
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            terraform plan -lock=false -input=false -no-color -out=tfplan
-          else
-            terraform plan -input=false -no-color -out=tfplan
-          fi
-
-      - name: Ensure plan output exists
-        if: always()
-        working-directory: msft-vhub-dev
-        shell: bash
-        run: |
-          if [[ -f plan.txt ]]; then
-            exit 0
-          fi
-
-          if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan.txt
-            exit 0
-          fi
-
-          echo "Plan output not available (terraform plan did not produce a tfplan file)." > plan.txt
-
-      - name: Upload plan artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-msft-vhub-dev
-          path: msft-vhub-dev/plan.txt
-          if-no-files-found: warn
-
-      - name: Comment plan on PR (summary)
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const stack = 'msft-vhub-dev';
-            const path = `${process.env.GITHUB_WORKSPACE}/${stack}/plan.txt`;
-            let plan = '';
-            try { plan = fs.readFileSync(path, 'utf8'); } catch (e) { plan = `Failed to read plan output: ${e.message}`; }
-            const max = 60000;
-            if (plan.length > max) plan = plan.slice(0, max) + `\n\n...truncated (${plan.length} chars)`;
-            const marker = `<!-- tfplan:${stack} -->`;
-            const body = `${marker}\n### Terraform plan: \`${stack}\`\n\n\`\`\`\n${plan}\n\`\`\``;
-            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, per_page: 100 });
-            const existing = comments.find(c => (c.body || '').includes(marker));
-            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
-
-  # ------------------------
-  # Apply jobs (main only)
-  # ------------------------
-
-  apply-vwan:
-    name: apply (msft-vwan-prod)
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - plan-vwan
-    if: |
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')) &&
-      needs.detect-changes.outputs.infra_changed == 'true' &&
-      (needs.detect-changes.outputs.shared == 'true' || needs.detect-changes.outputs.vwan_prod == 'true') &&
-      needs.plan-vwan.result == 'success'
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-vwan-prod
-      cancel-in-progress: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-vwan-prod
-        run: terraform init -input=false
-
-      - name: Terraform apply
-        working-directory: msft-vwan-prod
-        run: terraform apply -lock-timeout=10m -input=false -auto-approve
-
-  apply-dev-fwpolicy:
-    name: apply (dev) fwpolicy
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - apply-vwan
-      - plan-vwan
-      - plan-fwpolicy-dev
-      - plan-vhub-dev
-    if: |
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')) &&
-      needs.detect-changes.outputs.infra_changed == 'true' &&
-      (needs.detect-changes.outputs.shared == 'true' ||
-       needs.detect-changes.outputs.fwpolicy_dev == 'true' ||
-       needs.detect-changes.outputs.vhub_dev == 'true') &&
-       (needs.apply-vwan.result == 'success' || needs.apply-vwan.result == 'skipped') &&
-       needs.plan-vwan.result == 'success' &&
-       needs.plan-fwpolicy-dev.result == 'success' &&
-       needs.plan-vhub-dev.result == 'success'
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-fwpolicy-dev
-      cancel-in-progress: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-fwpolicy-dev
-        run: terraform init -input=false
-
-      - name: Terraform apply
-        working-directory: msft-fwpolicy-dev
-        run: terraform apply -lock-timeout=10m -input=false -auto-approve
-
-  apply-dev-vhub:
-    name: apply (dev) vhub
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - apply-dev-fwpolicy
-    if: |
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')) &&
-      needs.detect-changes.outputs.infra_changed == 'true' &&
-      (needs.detect-changes.outputs.shared == 'true' ||
-       needs.detect-changes.outputs.fwpolicy_dev == 'true' ||
-       needs.detect-changes.outputs.vhub_dev == 'true') &&
-      needs.apply-dev-fwpolicy.result == 'success'
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-vhub-dev
-      cancel-in-progress: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-vhub-dev
-        run: terraform init -input=false
-
-      - name: Terraform apply
-        working-directory: msft-vhub-dev
-        run: terraform apply -lock-timeout=10m -input=false -auto-approve
-
-  apply-prod-fwpolicy:
-    name: apply (prod) fwpolicy
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - apply-dev-vhub
-      - plan-vwan
-      - plan-fwpolicy-prod
-      - plan-vhub-prod
-    if: |
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')) &&
-      needs.detect-changes.outputs.infra_changed == 'true' &&
-      (needs.detect-changes.outputs.shared == 'true' ||
-       needs.detect-changes.outputs.fwpolicy_prod == 'true' ||
-       needs.detect-changes.outputs.vhub_prod == 'true') &&
-       (needs.apply-dev-vhub.result == 'success' || needs.apply-dev-vhub.result == 'skipped') &&
-       needs.plan-vwan.result == 'success' &&
-       needs.plan-fwpolicy-prod.result == 'success' &&
-       needs.plan-vhub-prod.result == 'success'
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-fwpolicy-prod
-      cancel-in-progress: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-fwpolicy-prod
-        run: terraform init -input=false
-
-      - name: Terraform apply
-        working-directory: msft-fwpolicy-prod
-        run: terraform apply -lock-timeout=10m -input=false -auto-approve
-
-  apply-prod-vhub:
-    name: apply (prod) vhub
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - apply-prod-fwpolicy
-    if: |
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')) &&
-      needs.detect-changes.outputs.infra_changed == 'true' &&
-      (needs.detect-changes.outputs.shared == 'true' ||
-       needs.detect-changes.outputs.fwpolicy_prod == 'true' ||
-       needs.detect-changes.outputs.vhub_prod == 'true') &&
-      needs.apply-prod-fwpolicy.result == 'success'
-
-    concurrency:
-      group: tfstate-${{ github.workflow }}-msft-vhub-prod
-      cancel-in-progress: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform init
-        working-directory: msft-vhub-prod
-        run: terraform init -input=false
-
-      - name: Terraform apply
-        working-directory: msft-vhub-prod
-        run: terraform apply -lock-timeout=10m -input=false -auto-approve
+          for stack in ${stacks}; do
+            echo "=== Applying ${stack} ==="
+            rm -rf .terraform
+            terraform init -input=false -reconfigure -backend-config="environments/${stack}/backend.hcl"
+            terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/${stack}/terraform.tfvars"
+          done
