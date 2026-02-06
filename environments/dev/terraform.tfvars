@@ -1,6 +1,11 @@
-existing_resource_groups = {
+resource_groups = {
   dev_hub = {
-    name = "msft-vhub-dev-rg"
+    name     = "msft-vhub-dev-rg"
+    location = "southeastasia"
+    tags = {
+      environment = "dev"
+      workload    = "msft-vhub"
+    }
   }
 }
 
