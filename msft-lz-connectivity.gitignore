@@ -1,0 +1,31 @@
+# Terraform
+**/.terraform/
+**/.alzlib/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/*.tfplan.*
+**/tfplan
+**/tfshow.json
+**/crash.log
+**/crash.*.log
+
+# Lock file (keep it if you want reproducible provider versions; ignore if you prefer per-module locks)
+# **/.terraform.lock.hcl
+
+# Local backends / var files (may contain IDs)
+**/*.tfvars
+**/*.tfvars.json
+**/*.auto.tfvars
+**/*.auto.tfvars.json
+
+# Exceptions (repo-tracked vars for demo/dev scenarios)
+!msft-fwpolicy-dev/dev.auto.tfvars
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
