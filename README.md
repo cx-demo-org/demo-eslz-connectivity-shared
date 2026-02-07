@@ -37,11 +37,9 @@ Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and re
 
 ## Architecture diagram
 
-The architecture diagram is maintained in:
+The architecture diagram is shown below:
 
-- `eslz-connectivity.drawio`
-
-Open it with the diagrams.net editor (Draw.io) in VS Code or via https://app.diagrams.net.
+![msft-eslz-connectivity architecture](./eslz-connectivity-view.png)
 
 ## Prerequisites
 
