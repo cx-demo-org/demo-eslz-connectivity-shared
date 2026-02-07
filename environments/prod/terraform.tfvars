@@ -34,12 +34,12 @@ resource_groups = {
 # - vWAN subscription: vWAN create/lookup (prod owns the shared vWAN).
 ###############################################
 # Target subscription/tenant for hub resources (vHub, Azure Firewall, Firewall Policy, etc.)
-hub_subscription_id = "##########"
-hub_tenant_id       = "##########"
+hub_subscription_id = "ADD_YOUR_HUB_SUBSCRIPTION_ID"
+hub_tenant_id       = "ADD_YOUR_TENANT_ID"
 
 # vWAN subscription/tenant (prod owns/creates the vWAN in this state).
-virtual_wan_subscription_id = "##########"
-virtual_wan_tenant_id       = "##########"
+virtual_wan_subscription_id = "ADD_YOUR_VWAN_SUBSCRIPTION_ID"
+virtual_wan_tenant_id       = "ADD_YOUR_TENANT_ID"
 
 ###############################################
 # Virtual WAN (vWAN)

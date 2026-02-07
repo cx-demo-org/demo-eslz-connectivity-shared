@@ -1,5 +1,5 @@
-resource_group_name  = "##########"
-storage_account_name = "##########"
-subscription_id      = "##########"
+resource_group_name  = "ADD_YOUR_STATE_RESOURCE_GROUP_NAME"
+storage_account_name = "ADD_YOUR_STATE_STORAGE_ACCOUNT_NAME"
+subscription_id      = "ADD_YOUR_STATE_SUBSCRIPTION_ID"
 container_name       = "tfstate"
 key                  = "connectivity/environments/prod/terraform.tfstate"

@@ -43,7 +43,7 @@ The architecture diagram is shown below:
 
 ## Template placeholders (required)
 
-This repository is intentionally sanitized and contains placeholder values (`##########`) for environment-specific identifiers.
+This repository is intentionally sanitized and contains placeholder values (for example, `ADD_YOUR_SUBSCRIPTION_ID`) for environment-specific identifiers.
 
 Before `terraform init/plan/apply` (locally or in GitHub Actions), you must:
 

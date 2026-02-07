@@ -37,10 +37,10 @@ env:
   ARM_USE_OIDC: true
   ARM_USE_AZUREAD: true
   ARM_OIDC_AUDIENCE: api://AzureADTokenExchange
-  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || '##########' }}
-  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || '##########' }}
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || 'ADD_YOUR_CLIENT_ID' }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || 'ADD_YOUR_TENANT_ID' }}
   # Azure CLI context for login; Terraform uses subscription_id from the env tfvars.
-  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || '##########' }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || 'ADD_YOUR_AZURE_LOGIN_SUBSCRIPTION_ID' }}
   TF_IN_AUTOMATION: true
 
 jobs:
@@ -68,21 +68,21 @@ jobs:
 
           for v in ARM_CLIENT_ID ARM_TENANT_ID ARM_SUBSCRIPTION_ID; do
             val="${!v:-}"
-            if [[ -z "${val}" || "${val}" == "##########" ]]; then
+            if [[ -z "${val}" || "${val}" == ADD_YOUR_* ]]; then
               echo "ERROR: ${v} is not set. Configure it as a GitHub Repo Variable (Settings → Secrets and variables → Actions → Variables)."
               missing=1
             fi
           done
 
           # Ensure backend.hcl placeholders were replaced.
-          if grep -R --line-number --fixed-strings '"##########"' "environments/${{ matrix.stack }}/backend.hcl" >/dev/null; then
+          if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${{ matrix.stack }}/backend.hcl" >/dev/null; then
             echo "ERROR: environments/${{ matrix.stack }}/backend.hcl still contains placeholder values (##########)."
             echo "Update backend.hcl to point to your remote state storage."
             missing=1
           fi
 
           # Ensure terraform.tfvars placeholders were replaced.
-          if grep -R --line-number --fixed-strings '"##########"' "environments/${{ matrix.stack }}/terraform.tfvars" >/dev/null; then
+          if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${{ matrix.stack }}/terraform.tfvars" >/dev/null; then
             echo "ERROR: environments/${{ matrix.stack }}/terraform.tfvars still contains placeholder values (##########)."
             echo "Update terraform.tfvars (or use TF_VAR_* overrides in GitHub Actions) before running plan/apply."
             missing=1
