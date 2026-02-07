@@ -132,11 +132,29 @@ variable "virtual_hubs" {
 
       tags = optional(map(string))
     }))
+
+    expressroute_gateway = optional(object({
+      name = optional(string)
+
+      allow_non_virtual_wan_traffic = optional(bool, false)
+      scale_units                   = optional(number, 1)
+
+      tags = optional(map(string))
+    }))
   }))
 
   validation {
     condition     = alltrue([for hub_key, hub in var.virtual_hubs : contains(keys(merge(var.resource_groups, var.existing_resource_groups)), hub.resource_group_key)])
     error_message = "Each virtual_hubs[*].resource_group_key must exist in resource_groups or existing_resource_groups."
+  }
+
+  validation {
+    condition = alltrue([
+      for hub_key, hub in var.virtual_hubs : (
+        try(hub.expressroute_gateway, null) == null || try(hub.expressroute_gateway.scale_units, 1) >= 1
+      )
+    ])
+    error_message = "For any virtual_hubs[*] with expressroute_gateway configured, scale_units must be >= 1."
   }
 
   validation {
@@ -150,3 +168,4 @@ variable "virtual_hubs" {
     error_message = "For any virtual_hubs[*] with firewall configured, you must set firewall.firewall_policy_id or firewall.firewall_policy_key."
   }
 }
+

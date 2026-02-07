@@ -17,3 +17,9 @@ output "virtual_hub_firewall_ids" {
   description = "Map of firewall ids by virtual hub key (null if not created)."
   value       = { for hub_key, hub_mod in module.virtual_hubs : hub_key => hub_mod.firewall_id }
 }
+
+output "expressroute_gateway_ids" {
+  description = "Map of ExpressRoute Gateway ids by virtual hub key (only for hubs with expressroute_gateway configured)."
+  value       = { for hub_key, gw_mod in module.expressroute_gateways : hub_key => gw_mod.id }
+}
+

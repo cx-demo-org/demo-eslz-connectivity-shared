@@ -182,5 +182,11 @@ virtual_hubs = {
       name                = "msft-vhub-prod-firewall"
       firewall_policy_key = "prod"
     }
+
+    expressroute_gateway = {
+      name        = "msft-vhub-prod-ergw"
+      scale_units = 1
+    }
   }
 }
+

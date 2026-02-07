@@ -123,3 +123,31 @@ module "virtual_hubs" {
   )
   firewall_extra_tags = try(each.value.firewall.tags, {})
 }
+
+module "expressroute_gateways" {
+  for_each = {
+    for hub_key, hub in var.virtual_hubs : hub_key => hub
+    if try(hub.expressroute_gateway, null) != null
+  }
+
+  source = "./modules/expressroute_gateway"
+
+  name = coalesce(
+    try(each.value.expressroute_gateway.name, null),
+    "${each.value.name}-ergw"
+  )
+
+  location            = each.value.location
+  resource_group_name = local.rg[each.value.resource_group_key].name
+  virtual_hub_id      = module.virtual_hubs[each.key].hub_id
+
+  tags = merge(
+    local.rg[each.value.resource_group_key].tags,
+    try(each.value.tags, {}),
+    try(each.value.expressroute_gateway.tags, {})
+  )
+
+  allow_non_virtual_wan_traffic = try(each.value.expressroute_gateway.allow_non_virtual_wan_traffic, false)
+  scale_units                   = try(each.value.expressroute_gateway.scale_units, 1)
+}
+

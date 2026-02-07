@@ -124,5 +124,10 @@ virtual_hubs = {
       name                = "msft-vhub-dev-firewall"
       firewall_policy_key = "dev"
     }
+
+    expressroute_gateway = {
+      name        = "msft-vhub-dev-ergw"
+      scale_units = 1
+    }
   }
 }
