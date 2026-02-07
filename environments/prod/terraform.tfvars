@@ -8,20 +8,20 @@
 ###############################################
 resource_groups = {
   prod_connectivity = {
-    name     = "msft-prod-connectivity-rg"
+    name     = "demo-prod-connectivity-rg"
     location = "southeastasia"
     tags = {
       environment = "prod"
-      workload    = "msft-vwan"
+      workload    = "demo-vwan"
     }
   }
 
   prod_hub = {
-    name     = "msft-vhub-prod-rg"
+    name     = "demo-vhub-prod-rg"
     location = "southeastasia"
     tags = {
       environment = "prod"
-      workload    = "msft-vhub"
+      workload    = "demo-vhub"
     }
   }
 }
@@ -53,7 +53,7 @@ virtual_wan_tenant_id       = "ADD_YOUR_TENANT_ID"
 # - import it into this env state, or
 # - set create=false and supply resource_group_name to data-lookup instead.
 virtual_wan = {
-  name               = "msft-prod-sea-vwan"
+  name               = "demo-prod-sea-vwan"
   resource_group_key = "prod_connectivity"
   location           = "southeastasia"
   sku                = "Standard"
@@ -65,7 +65,7 @@ virtual_wan = {
 
   tags = {
     environment = "prod"
-    workload    = "msft-vwan"
+    workload    = "demo-vwan"
   }
 }
 
@@ -85,7 +85,7 @@ virtual_wan = {
 # 3) Add peerings/connections only after the circuit is provisioned.
 expressroute_circuits = {
   prod_primary = {
-    name               = "msft-prod-sea-er-circuit-01"
+    name               = "demo-prod-sea-er-circuit-01"
     resource_group_key = "prod_hub"
     location           = "southeastasia"
 
@@ -104,7 +104,7 @@ expressroute_circuits = {
 
     tags = {
       environment = "prod"
-      workload    = "msft-expressroute"
+      workload    = "demo-expressroute"
     }
   }
 }
@@ -117,12 +117,12 @@ expressroute_circuits = {
 ###############################################
 firewall_policies = {
   prod = {
-    name               = "msft-vhub-prod-firewall-policy"
+    name               = "demo-vhub-prod-firewall-policy"
     resource_group_key = "prod_hub"
     location           = "southeastasia"
     tags = {
       environment = "prod"
-      workload    = "msft-fwpolicy"
+      workload    = "demo-fwpolicy"
     }
 
     # Rules are explicitly managed via tfvars so end users can customize them.
@@ -243,23 +243,23 @@ firewall_policies = {
 ###############################################
 virtual_hubs = {
   prod = {
-    name               = "msft-vhub-prod"
+    name               = "demo-vhub-prod"
     resource_group_key = "prod_hub"
     location           = "southeastasia"
     address_prefix     = "10.2.0.0/20"
 
     tags = {
       environment = "prod"
-      workload    = "msft-vhub"
+      workload    = "demo-vhub"
     }
 
     firewall = {
-      name                = "msft-vhub-prod-firewall"
+      name                = "demo-vhub-prod-firewall"
       firewall_policy_key = "prod"
     }
 
     expressroute_gateway = {
-      name        = "msft-vhub-prod-ergw"
+      name        = "demo-vhub-prod-ergw"
       scale_units = 1
     }
   }

@@ -6,7 +6,7 @@
 > [!NOTE]
 > AVM modules may introduce changes over time (including breaking changes). For AVM bugs or feature requests, please raise issues with the relevant AVM module repository.
 
-# msft-eslz-connectivity-shared
+# demo-eslz-connectivity-shared
 
 Terraform configuration to deploy a Virtual WAN based connectivity foundation using AVM modules.
 
@@ -39,7 +39,7 @@ Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and re
 
 The architecture diagram is shown below:
 
-![msft-eslz-connectivity-shared architecture](./eslz-connectivity-view-v2.png)
+![demo-eslz-connectivity-shared architecture](./eslz-connectivity-view-v2.png)
 
 ## Template placeholders (required)
 

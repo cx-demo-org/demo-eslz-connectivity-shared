@@ -1,16 +1,16 @@
-# msft-eslz-connectivity
+# demo-eslz-connectivity
 
-This repository was previously organized under a top-level folder named `msft-lz-connectivity/`.
+This repository was previously organized under a top-level folder named `demo-lz-connectivity/`.
 
 As part of a repo restructure, the connectivity stacks were moved to the repository root:
 
-- `msft-vwan-prod/`
-- `msft-fwpolicy-dev/`
-- `msft-vhub-dev/`
-- `msft-fwpolicy-prod/`
-- `msft-vhub-prod/`
+- `demo-vwan-prod/`
+- `demo-fwpolicy-dev/`
+- `demo-vhub-dev/`
+- `demo-fwpolicy-prod/`
+- `demo-vhub-prod/`
 
-Remote state keys were intentionally kept unchanged (still prefixed with `msft-lz-connectivity/`) to avoid any state migration.
+Remote state keys were intentionally kept unchanged (still prefixed with `demo-lz-connectivity/`) to avoid any state migration.
 
 This folder contains the Terraform stacks that make up the **Connectivity Landing Zone** used in this repo.
 
@@ -27,7 +27,7 @@ All stacks are configured with a **local backend** and store state files outside
 
 ## Stack layout
 
-### `msft-vwan-prod/`
+### `demo-vwan-prod/`
 Creates the shared Virtual WAN.
 
 - Uses the AVM submodule: `Azure/avm-ptn-alz-connectivity-virtual-wan/azurerm//modules/virtual-wan`
@@ -36,7 +36,7 @@ Creates the shared Virtual WAN.
 
 The hubs attach to this vWAN by looking it up directly with `data.azurerm_virtual_wan`.
 
-### `msft-vhub-prod/`
+### `demo-vhub-prod/`
 Creates the **prod** secured virtual hub and Azure Firewall (Hub SKU).
 
 - Uses the AVM submodule: `Azure/avm-ptn-alz-connectivity-virtual-wan/azurerm//modules/virtual-hub`
@@ -48,10 +48,10 @@ Creates the **prod** secured virtual hub and Azure Firewall (Hub SKU).
   - Virtual WAN (`data.azurerm_virtual_wan`)
   - Firewall policy (`data.azurerm_firewall_policy`)
 
-### `msft-vhub-dev/`
+### `demo-vhub-dev/`
 Same as prod hub stack, but for **dev**.
 
-### `msft-fwpolicy-prod/`
+### `demo-fwpolicy-prod/`
 Owns the **Azure Firewall Policy** for the prod hub.
 
 - Creates:
@@ -65,26 +65,26 @@ This stack outputs:
 
 The prod hub stack attaches this policy via `azurerm_firewall.firewall_policy_id`.
 
-### `msft-fwpolicy-dev/`
+### `demo-fwpolicy-dev/`
 Same as prod firewall policy stack, but for **dev**.
 
 ## How the stacks connect
 
-- `msft-vwan-prod` is deployed first.
-- `msft-vhub-prod` and `msft-vhub-dev` look up the existing vWAN directly (no dependency on terraform remote state).
+- `demo-vwan-prod` is deployed first.
+- `demo-vhub-prod` and `demo-vhub-dev` look up the existing vWAN directly (no dependency on terraform remote state).
 - Each hub looks up its firewall policy directly.
 
 ## Recommended workflow
 
 1. Deploy vWAN:
-   - `msft-vwan-prod/`
+  - `demo-vwan-prod/`
 2. Deploy policies:
-   - `msft-fwpolicy-prod/`
-   - `msft-fwpolicy-dev/`
+  - `demo-fwpolicy-prod/`
+  - `demo-fwpolicy-dev/`
 3. Deploy hubs:
-   - `msft-vhub-prod/`
-   - `msft-vhub-dev/`
-4. Iterating on egress rules should normally only require changing/applying the `msft-fwpolicy-*` stacks.
+  - `demo-vhub-prod/`
+  - `demo-vhub-dev/`
+4. Iterating on egress rules should normally only require changing/applying the `demo-fwpolicy-*` stacks.
 
 ## Notes / gotchas
 

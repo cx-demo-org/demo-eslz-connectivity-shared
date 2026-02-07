@@ -8,11 +8,11 @@
 ###############################################
 resource_groups = {
   dev_hub = {
-    name     = "msft-vhub-dev-rg"
+    name     = "demo-vhub-dev-rg"
     location = "southeastasia"
     tags = {
       environment = "dev"
-      workload    = "msft-vhub"
+      workload    = "demo-vhub"
     }
   }
 }
@@ -39,8 +39,8 @@ virtual_wan_tenant_id       = "ADD_YOUR_TENANT_ID"
 ###############################################
 # vWAN is created once (typically in prod) and referenced from dev.
 existing_virtual_wan = {
-  name                = "msft-prod-sea-vwan"
-  resource_group_name = "msft-prod-connectivity-rg"
+  name                = "demo-prod-sea-vwan"
+  resource_group_name = "demo-prod-connectivity-rg"
 }
 
 ###############################################
@@ -55,7 +55,7 @@ existing_virtual_wan = {
 # If you want dev to also create circuits, define them here.
 expressroute_circuits = {
   dev_primary = {
-    name               = "msft-dev-sea-er-circuit-01"
+    name               = "demo-dev-sea-er-circuit-01"
     resource_group_key = "dev_hub"
     location           = "southeastasia"
 
@@ -74,7 +74,7 @@ expressroute_circuits = {
 
     tags = {
       environment = "dev"
-      workload    = "msft-expressroute"
+      workload    = "demo-expressroute"
     }
   }
 }
@@ -87,12 +87,12 @@ expressroute_circuits = {
 ###############################################
 firewall_policies = {
   dev = {
-    name               = "msft-vhub-dev-firewall-policy"
+    name               = "demo-vhub-dev-firewall-policy"
     resource_group_key = "dev_hub"
     location           = "southeastasia"
     tags = {
       environment = "dev"
-      workload    = "msft-fwpolicy"
+      workload    = "demo-fwpolicy"
     }
 
     # Rules are explicitly managed via tfvars so end users can customize them.
@@ -179,23 +179,23 @@ firewall_policies = {
 ###############################################
 virtual_hubs = {
   dev = {
-    name               = "msft-vhub-dev"
+    name               = "demo-vhub-dev"
     resource_group_key = "dev_hub"
     location           = "southeastasia"
     address_prefix     = "192.168.0.0/20"
 
     tags = {
       environment = "dev"
-      workload    = "msft-vhub"
+      workload    = "demo-vhub"
     }
 
     firewall = {
-      name                = "msft-vhub-dev-firewall"
+      name                = "demo-vhub-dev-firewall"
       firewall_policy_key = "dev"
     }
 
     expressroute_gateway = {
-      name        = "msft-vhub-dev-ergw"
+      name        = "demo-vhub-dev-ergw"
       scale_units = 1
     }
   }

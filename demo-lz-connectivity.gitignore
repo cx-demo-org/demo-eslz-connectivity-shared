@@ -20,7 +20,7 @@
 **/*.auto.tfvars.json
 
 # Exceptions (repo-tracked vars for demo/dev scenarios)
-!msft-fwpolicy-dev/dev.auto.tfvars
+!demo-fwpolicy-dev/dev.auto.tfvars
 
 # OS / editor
 .DS_Store
