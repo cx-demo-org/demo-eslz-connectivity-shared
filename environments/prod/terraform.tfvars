@@ -7,6 +7,9 @@
 # Key = internal handle used by `resource_group_key` references.
 ###############################################
 resource_groups = {
+  ###############################################
+  # Southeast Asia (southeastasia)
+  ###############################################
   prod_connectivity = {
     name     = "msft-prod-connectivity-rg"
     location = "southeastasia"
@@ -19,6 +22,18 @@ resource_groups = {
   prod_hub = {
     name     = "msft-vhub-prod-rg"
     location = "southeastasia"
+    tags = {
+      environment = "prod"
+      workload    = "msft-vhub"
+    }
+  }
+
+  ###############################################
+  # Europe (westeurope)
+  ###############################################
+  prod_hub_eu = {
+    name     = "msft-vhub-prod-eu-rg"
+    location = "westeurope"
     tags = {
       environment = "prod"
       workload    = "msft-vhub"
@@ -116,6 +131,9 @@ expressroute_circuits = {
 # Rules are tfvars-driven to make egress/allow-lists easy to customize.
 ###############################################
 firewall_policies = {
+  ###############################################
+  # Southeast Asia (southeastasia)
+  ###############################################
   prod = {
     name               = "msft-vhub-prod-firewall-policy"
     resource_group_key = "prod_hub"
@@ -232,6 +250,123 @@ firewall_policies = {
       }
     }
   }
+
+  ###############################################
+  # Europe (westeurope)
+  ###############################################
+  prod_eu = {
+    name               = "msft-vhub-prod-eu-firewall-policy"
+    resource_group_key = "prod_hub_eu"
+    location           = "westeurope"
+    tags = {
+      environment = "prod"
+      workload    = "msft-fwpolicy"
+    }
+
+    # Start with the same baseline allow-list as SEA, then tailor as needed.
+    rule_collection_groups = {
+      "aks-egress" = {
+        priority = 200
+
+        application_rule_collections = {
+          "aks-app" = {
+            priority = 200
+            action   = "Allow"
+
+            rules = [
+              {
+                name             = "aks-platform-fqdns"
+                source_addresses = ["*"]
+                protocols        = [{ type = "Http", port = 80 }, { type = "Https", port = 443 }]
+                destination_fqdns = [
+                  "*.azmk8s.io",
+                  "mcr.microsoft.com",
+                  "*.data.mcr.microsoft.com",
+                  "mcr-0001.mcr-msedge.net",
+                  "*.cdn.mscr.io",
+                  "*.blob.core.windows.net",
+                  "archive.ubuntu.com",
+                  "security.ubuntu.com",
+                  "azure.archive.ubuntu.com",
+                  "packages.microsoft.com",
+                  "download.microsoft.com",
+                  "management.azure.com",
+                  "login.microsoftonline.com",
+                  "graph.microsoft.com",
+                  "acs-mirror.azureedge.net",
+                  "packages.aks.azure.com",
+                  "*.ods.opinsights.azure.com",
+                  "*.oms.opinsights.azure.com",
+                  "*.monitoring.azure.com",
+                  "dc.services.visualstudio.com",
+                  "*.in.applicationinsights.azure.com",
+                  "global.handler.control.monitor.azure.com",
+                  "*.handler.control.monitor.azure.com",
+                  "*.ingest.monitor.azure.com",
+                  "*.metrics.ingest.monitor.azure.com",
+                  "data.policy.core.windows.net",
+                  "store.policy.core.windows.net",
+                  "*.securitycenter.windows.com",
+                  "*.cloud.defender.microsoft.com",
+                ]
+              },
+              {
+                name                  = "aks-fqdn-tag"
+                source_addresses      = ["*"]
+                protocols             = [{ type = "Http", port = 80 }, { type = "Https", port = 443 }]
+                destination_fqdn_tags = ["AzureKubernetesService"]
+              },
+            ]
+          }
+        }
+
+        network_rule_collections = {
+          "aks-network" = {
+            priority = 210
+            action   = "Allow"
+
+            rules = [
+              {
+                name                  = "aks-controlplane-udp-1194"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["AzureCloud.westeurope"]
+                destination_ports     = ["1194"]
+              },
+              {
+                name                  = "aks-controlplane-tcp-9000"
+                protocols             = ["TCP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["AzureCloud.westeurope"]
+                destination_ports     = ["9000"]
+              },
+              {
+                name                  = "dns-udp"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["53"]
+              },
+              {
+                name                  = "dns-tcp"
+                protocols             = ["TCP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["53"]
+              },
+              {
+                name                  = "ntp-udp"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["123"]
+              },
+            ]
+          }
+        }
+      }
+    }
+  }
 }
 
 ###############################################
@@ -242,6 +377,9 @@ firewall_policies = {
 # - ExpressRoute gateway (Virtual WAN gateway inside the vHub)
 ###############################################
 virtual_hubs = {
+  ###############################################
+  # Southeast Asia (southeastasia)
+  ###############################################
   prod = {
     name               = "msft-vhub-prod"
     resource_group_key = "prod_hub"
@@ -260,6 +398,31 @@ virtual_hubs = {
 
     expressroute_gateway = {
       name        = "msft-vhub-prod-ergw"
+      scale_units = 1
+    }
+  }
+
+  ###############################################
+  # Europe (westeurope)
+  ###############################################
+  prod_eu = {
+    name               = "msft-vhub-prod-eu"
+    resource_group_key = "prod_hub_eu"
+    location           = "westeurope"
+    address_prefix     = "172.16.0.0/20"
+
+    tags = {
+      environment = "prod"
+      workload    = "msft-vhub"
+    }
+
+    firewall = {
+      name                = "msft-vhub-prod-eu-firewall"
+      firewall_policy_key = "prod_eu"
+    }
+
+    expressroute_gateway = {
+      name        = "msft-vhub-prod-eu-ergw"
       scale_units = 1
     }
   }
