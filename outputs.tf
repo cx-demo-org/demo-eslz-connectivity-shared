@@ -28,3 +28,18 @@ output "expressroute_circuit_ids" {
   value       = { for circuit_key, circuit_mod in module.expressroute_circuits : circuit_key => circuit_mod.resource_id }
 }
 
+output "private_dns_resolver_ids" {
+  description = "Map of Private DNS Resolver IDs by virtual hub key (only for hubs with private_dns_resolver configured)."
+  value       = { for hub_key, pdr_mod in module.private_dns_resolvers : hub_key => pdr_mod.resolver_id }
+}
+
+output "private_dns_resolver_inbound_endpoint_ips" {
+  description = "Map of inbound endpoint IPs by virtual hub key (and inbound endpoint key)."
+  value       = { for hub_key, pdr_mod in module.private_dns_resolvers : hub_key => pdr_mod.inbound_endpoint_ips }
+}
+
+output "private_dns_resolver_sidecar_vnet_ids" {
+  description = "Map of sidecar VNet IDs by virtual hub key (only for hubs with private_dns_resolver configured)."
+  value       = { for hub_key, pdr_mod in module.private_dns_resolvers : hub_key => pdr_mod.sidecar_virtual_network_id }
+}
+

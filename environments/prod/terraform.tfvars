@@ -400,6 +400,29 @@ virtual_hubs = {
       name        = "msft-vhub-prod-ergw"
       scale_units = 1
     }
+
+    # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
+    private_dns_resolver = {
+      # resource_group_key = "prod_dns"  # optional: separate RG key for DNS resources
+      name = "msft-pdr-prod"
+
+      sidecar_virtual_network = {
+        name          = "msft-vnet-prod-dns"
+        address_space = ["10.2.16.0/24"]
+      }
+
+      inbound_subnet = {
+        address_prefixes = ["10.2.16.0/28"]
+      }
+
+      outbound_subnet = {
+        address_prefixes = ["10.2.16.16/28"]
+      }
+
+      outbound_endpoints = {
+        default = {}
+      }
+    }
   }
 
   ###############################################
@@ -424,6 +447,29 @@ virtual_hubs = {
     expressroute_gateway = {
       name        = "msft-vhub-prod-eu-ergw"
       scale_units = 1
+    }
+
+    # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
+    private_dns_resolver = {
+      # resource_group_key = "prod_dns_eu"  # optional: separate RG key for DNS resources
+      name = "msft-pdr-prod-eu"
+
+      sidecar_virtual_network = {
+        name          = "msft-vnet-prod-eu-dns"
+        address_space = ["172.16.16.0/24"]
+      }
+
+      inbound_subnet = {
+        address_prefixes = ["172.16.16.0/28"]
+      }
+
+      outbound_subnet = {
+        address_prefixes = ["172.16.16.16/28"]
+      }
+
+      outbound_endpoints = {
+        default = {}
+      }
     }
   }
 }
