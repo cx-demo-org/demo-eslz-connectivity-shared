@@ -106,86 +106,96 @@ locals {
   rule_collection_groups_effective = merge(local.aks_rule_collection_groups, local.rule_collection_groups_custom)
 }
 
-resource "azurerm_firewall_policy" "this" {
+locals {
+  rule_collection_groups_application_rule_collections = {
+    for group_name, group in local.rule_collection_groups_effective : group_name => [
+      for collection_name, collection in try(tomap(try(group.application_rule_collections, {})), {}) : {
+        action   = collection.action
+        name     = collection_name
+        priority = collection.priority
+        rule = [
+          for r in(
+            can(collection.rules[0]) ? collection.rules : [
+              for rule_name, rule_obj in collection.rules : merge(rule_obj, { name = rule_name })
+            ]
+            ) : {
+            name                  = r.name
+            description           = try(r.description, null)
+            source_addresses      = try(r.source_addresses, [])
+            source_ip_groups      = try(r.source_ip_groups, [])
+            destination_addresses = try(r.destination_addresses, [])
+            destination_fqdn_tags = try(r.destination_fqdn_tags, [])
+            destination_fqdns     = try(r.destination_fqdns, [])
+            destination_urls      = try(r.destination_urls, [])
+            web_categories        = try(r.web_categories, [])
+            terminate_tls         = try(r.terminate_tls, null)
+            http_headers          = try(r.http_headers, null)
+            protocols             = try(r.protocols, null)
+          }
+        ]
+      }
+    ]
+  }
+
+  rule_collection_groups_network_rule_collections = {
+    for group_name, group in local.rule_collection_groups_effective : group_name => [
+      for collection_name, collection in try(tomap(try(group.network_rule_collections, {})), {}) : {
+        action   = collection.action
+        name     = collection_name
+        priority = collection.priority
+        rule = [
+          for r in(
+            can(collection.rules[0]) ? collection.rules : [
+              for rule_name, rule_obj in collection.rules : merge(rule_obj, { name = rule_name })
+            ]
+            ) : {
+            name                  = r.name
+            description           = try(r.description, null)
+            protocols             = r.protocols
+            source_addresses      = try(r.source_addresses, [])
+            source_ip_groups      = try(r.source_ip_groups, [])
+            destination_addresses = try(r.destination_addresses, [])
+            destination_fqdns     = try(r.destination_fqdns, [])
+            destination_ip_groups = try(r.destination_ip_groups, [])
+            destination_ports     = r.destination_ports
+          }
+        ]
+      }
+    ]
+  }
+}
+
+module "firewall_policy" {
+  source  = "Azure/avm-res-network-firewallpolicy/azurerm"
+  version = "0.3.4"
+
   name                = var.name
   location            = var.location
   resource_group_name = var.resource_group_name
-  sku                 = "Standard"
 
-  tags = var.tags
+  firewall_policy_sku = "Standard"
+  tags                = var.tags
+
+  enable_telemetry = false
 }
 
-resource "azurerm_firewall_policy_rule_collection_group" "custom" {
+module "rule_collection_groups" {
   for_each = local.rule_collection_groups_effective
 
-  name               = each.key
-  firewall_policy_id = azurerm_firewall_policy.this.id
-  priority           = each.value.priority
+  source  = "Azure/avm-res-network-firewallpolicy/azurerm//modules/rule_collection_groups"
+  version = "0.3.4"
 
-  dynamic "application_rule_collection" {
-    for_each = try(tomap(try(each.value.application_rule_collections, {})), {})
-    content {
-      name     = application_rule_collection.key
-      priority = application_rule_collection.value.priority
-      action   = application_rule_collection.value.action
+  firewall_policy_rule_collection_group_firewall_policy_id = module.firewall_policy.resource_id
+  firewall_policy_rule_collection_group_name               = each.key
+  firewall_policy_rule_collection_group_priority           = each.value.priority
 
-      dynamic "rule" {
-        for_each = can(application_rule_collection.value.rules[0]) ? application_rule_collection.value.rules : [
-          for rule_name, rule_obj in application_rule_collection.value.rules : merge(rule_obj, { name = rule_name })
-        ]
-        content {
-          name             = rule.value.name
-          source_addresses = rule.value.source_addresses
+  firewall_policy_rule_collection_group_application_rule_collection = length(local.rule_collection_groups_application_rule_collections[each.key]) > 0 ? local.rule_collection_groups_application_rule_collections[each.key] : null
+  firewall_policy_rule_collection_group_network_rule_collection     = length(local.rule_collection_groups_network_rule_collections[each.key]) > 0 ? local.rule_collection_groups_network_rule_collections[each.key] : null
+  firewall_policy_rule_collection_group_nat_rule_collection         = null
+}
 
-          dynamic "protocols" {
-            for_each = rule.value.protocols
-            content {
-              type = protocols.value.type
-              port = protocols.value.port
-            }
-          }
-
-          destination_fqdns     = try(rule.value.destination_fqdns, null)
-          destination_fqdn_tags = try(rule.value.destination_fqdn_tags, null)
-        }
-      }
-    }
-  }
-
-  dynamic "network_rule_collection" {
-    for_each = try(tomap(try(each.value.network_rule_collections, {})), {})
-    content {
-      name     = network_rule_collection.key
-      priority = network_rule_collection.value.priority
-      action   = network_rule_collection.value.action
-
-      dynamic "rule" {
-        for_each = can(network_rule_collection.value.rules[0]) ? network_rule_collection.value.rules : [
-          for rule_name, rule_obj in network_rule_collection.value.rules : merge(rule_obj, { name = rule_name })
-        ]
-        content {
-          name              = rule.value.name
-          protocols         = rule.value.protocols
-          source_addresses  = rule.value.source_addresses
-          destination_ports = rule.value.destination_ports
-
-          destination_addresses = try(rule.value.destination_addresses, null)
-          destination_fqdns     = try(rule.value.destination_fqdns, null)
-        }
-      }
-    }
-  }
-
-  lifecycle {
-    precondition {
-      condition     = local.aks_builtin_enabled == false || length(local.aks_source_addresses) > 0
-      error_message = "When builtins.aks_egress.enabled=true, builtins.aks_egress.source_addresses must be provided and non-empty."
-    }
-
-    precondition {
-      condition     = local.aks_builtin_enabled == false || (length(local.aks_dns_servers) > 0 && length(local.aks_ntp_servers) > 0)
-      error_message = "When builtins.aks_egress.enabled=true, builtins.aks_egress.dns_servers and builtins.aks_egress.ntp_servers must be provided and non-empty."
-    }
-  }
+moved {
+  from = azurerm_firewall_policy.this
+  to   = module.firewall_policy.azurerm_firewall_policy.this
 }
 

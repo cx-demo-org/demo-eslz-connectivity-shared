@@ -5,5 +5,5 @@ output "hub_id" {
 
 output "firewall_id" {
   description = "Azure Firewall resource ID if created, otherwise null."
-  value       = var.create_firewall ? azurerm_firewall.this[0].id : null
+  value       = var.create_firewall ? module.firewall[0].resource_id : null
 }

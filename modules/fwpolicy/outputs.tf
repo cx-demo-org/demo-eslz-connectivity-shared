@@ -1,4 +1,4 @@
 output "id" {
   description = "Firewall Policy resource ID."
-  value       = azurerm_firewall_policy.this.id
+  value       = module.firewall_policy.resource_id
 }

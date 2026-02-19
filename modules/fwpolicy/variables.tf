@@ -57,4 +57,25 @@ variable "builtins" {
   default = {
     aks_egress = null
   }
+
+  validation {
+    condition = (
+      try(var.builtins.aks_egress, null) == null
+      || try(var.builtins.aks_egress.enabled, false) == false
+      || length(try(var.builtins.aks_egress.source_addresses, [])) > 0
+    )
+    error_message = "When builtins.aks_egress.enabled=true, builtins.aks_egress.source_addresses must be provided and non-empty."
+  }
+
+  validation {
+    condition = (
+      try(var.builtins.aks_egress, null) == null
+      || try(var.builtins.aks_egress.enabled, false) == false
+      || (
+        length(try(var.builtins.aks_egress.dns_servers, [])) > 0
+        && length(try(var.builtins.aks_egress.ntp_servers, [])) > 0
+      )
+    )
+    error_message = "When builtins.aks_egress.enabled=true, builtins.aks_egress.dns_servers and builtins.aks_egress.ntp_servers must be provided and non-empty."
+  }
 }

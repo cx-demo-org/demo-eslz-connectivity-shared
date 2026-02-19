@@ -6,12 +6,17 @@ locals {
   )
 }
 
-resource "azurerm_resource_group" "rg" {
+module "resource_groups" {
   for_each = var.resource_groups
+
+  source  = "Azure/avm-res-resources-resourcegroup/azurerm"
+  version = "0.2.2"
 
   name     = each.value.name
   location = each.value.location
   tags     = each.value.tags
+
+  enable_telemetry = false
 }
 
 data "azurerm_resource_group" "rg" {
@@ -22,7 +27,7 @@ data "azurerm_resource_group" "rg" {
 
 locals {
   rg = merge(
-    { for rg_key, rg_res in azurerm_resource_group.rg : rg_key => { id = rg_res.id, name = rg_res.name, location = rg_res.location, tags = rg_res.tags } },
+    { for rg_key, rg_mod in module.resource_groups : rg_key => { id = rg_mod.resource_id, name = rg_mod.name, location = rg_mod.location, tags = coalesce(try(rg_mod.resource.tags, null), try(var.resource_groups[rg_key].tags, {})) } },
     { for rg_key, rg_data in data.azurerm_resource_group.rg : rg_key => { id = rg_data.id, name = rg_data.name, location = rg_data.location, tags = rg_data.tags } }
   )
 }
