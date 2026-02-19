@@ -18,6 +18,7 @@ Per environment (dev/prod) this repo can deploy:
 - Firewall policies + rule collection groups (tfvars-driven)
 - Virtual hubs (vHubs)
 - Optional secured hubs (Azure Firewall `AZFW_Hub` attached to a vHub)
+- Optional Private DNS Resolver (per vHub, deployed into a sidecar VNet)
 - Optional ExpressRoute gateways (in each vHub)
 - Optional ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
 
@@ -29,6 +30,7 @@ Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and re
 	- `modules/vwan`: AVM Virtual WAN wrapper
 	- `modules/vhub`: AVM Virtual Hub wrapper + optional Azure Firewall
 	- `modules/fwpolicy`: Azure Firewall Policy + rule collection groups
+	- `modules/private_dns_resolver`: Private DNS Resolver + sidecar VNet + optional vHub connection
 	- `modules/expressroute_gateway`: AVM ExpressRoute Gateway (vWAN/vHub) wrapper
 	- `modules/expressroute_circuit`: AVM ExpressRoute Circuit wrapper
 - `environments/`
@@ -75,7 +77,7 @@ Key inputs:
 
 - `resource_groups` / `existing_resource_groups`
 - `virtual_wan` (managed) **or** `existing_virtual_wan` (lookup) — exactly one must be set
-- `virtual_hubs` map (each hub can include optional `firewall` and optional `expressroute_gateway`)
+- `virtual_hubs` map (each hub can include optional `firewall`, optional `private_dns_resolver`, and optional `expressroute_gateway`)
 - `firewall_policies` map
 - `expressroute_circuits` map (optional)
 
@@ -148,5 +150,8 @@ Useful root outputs include:
 - `virtual_wan_id`
 - `virtual_hub_ids`
 - `virtual_hub_firewall_ids`
+- `private_dns_resolver_ids`
+- `private_dns_resolver_inbound_endpoint_ips`
+- `private_dns_resolver_sidecar_vnet_ids`
 - `expressroute_gateway_ids`
 - `expressroute_circuit_ids`
