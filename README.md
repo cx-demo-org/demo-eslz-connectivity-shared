@@ -41,7 +41,7 @@ Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and re
 
 The architecture diagram is shown below:
 
-![demo-eslz-connectivity-shared architecture](./eslz-connectivity-view-v2.png)
+![demo-eslz-connectivity-shared architecture](./eslz-connectivity.png)
 
 ## Template placeholders (required)
 

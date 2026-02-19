@@ -262,6 +262,45 @@ virtual_hubs = {
       name        = "demo-vhub-prod-ergw"
       scale_units = 1
     }
+
+    # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
+    private_dns_resolver = {
+      # resource_group_key = "prod_dns"  # optional: separate RG key for DNS resources
+      name = "demo-pdr-prod"
+
+      sidecar_virtual_network = {
+        name          = "demo-vnet-prod-dns"
+        address_space = ["10.2.16.0/24"]
+      }
+
+      inbound_subnet = {
+        address_prefixes = ["10.2.16.0/28"]
+      }
+
+      outbound_subnet = {
+        address_prefixes = ["10.2.16.16/28"]
+      }
+
+      outbound_endpoints = {
+        default = {}
+      }
+
+      # DNS forwarding ruleset (hybrid/on-prem placeholder)
+      # Note: if forwarding_rulesets is configured, keep exactly ONE outbound_endpoints entry.
+      forwarding_rulesets = {
+        default = {
+          rules = {
+            corp = {
+              domain_name = "corp.contoso.com."
+              target_dns_servers = [
+                { ip_address = "10.0.0.10", port = 53 },
+                { ip_address = "10.0.0.11", port = 53 },
+              ]
+            }
+          }
+        }
+      }
+    }
   }
 }
 
