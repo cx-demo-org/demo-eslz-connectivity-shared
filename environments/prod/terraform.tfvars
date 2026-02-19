@@ -422,6 +422,24 @@ virtual_hubs = {
       outbound_endpoints = {
         default = {}
       }
+
+      # Optional: DNS forwarding ruleset (hybrid/on-prem)
+      # Uncomment and replace target DNS IPs to enable conditional forwarding.
+      # Note: if forwarding_rulesets is configured, keep exactly ONE outbound_endpoints entry.
+      #
+      forwarding_rulesets = {
+        default = {
+          rules = {
+            corp = {
+              domain_name = "corp.contoso.com."
+              target_dns_servers = [
+                { ip_address = "10.0.0.10", port = 53 },
+                { ip_address = "10.0.0.11", port = 53 },
+              ]
+            }
+          }
+        }
+      }
     }
   }
 
@@ -470,6 +488,21 @@ virtual_hubs = {
       outbound_endpoints = {
         default = {}
       }
+
+      # Optional: DNS forwarding ruleset (hybrid/on-prem)
+      # forwarding_rulesets = {
+      #   default = {
+      #     rules = {
+      #       corp = {
+      #         domain_name = "corp.contoso.com."
+      #         target_dns_servers = [
+      #           { ip_address = "ADD_YOUR_ONPREM_DNS_IP_1", port = 53 },
+      #           { ip_address = "ADD_YOUR_ONPREM_DNS_IP_2", port = 53 },
+      #         ]
+      #       }
+      #     }
+      #   }
+      # }
     }
   }
 }
