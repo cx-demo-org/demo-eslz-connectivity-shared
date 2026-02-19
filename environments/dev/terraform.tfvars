@@ -198,5 +198,42 @@ virtual_hubs = {
       name        = "msft-vhub-dev-ergw"
       scale_units = 1
     }
+
+    # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
+    # private_dns_resolver = {
+    #   # resource_group_key = "dev_dns"  # optional: separate RG key for DNS resources
+    #   name = "msft-pdr-dev"
+    #
+    #   sidecar_virtual_network = {
+    #     name          = "msft-vnet-dev-dns"
+    #     address_space = ["192.168.16.0/24"]
+    #   }
+    #
+    #   inbound_subnet = {
+    #     address_prefixes = ["192.168.16.0/28"]
+    #   }
+    #
+    #   outbound_subnet = {
+    #     address_prefixes = ["192.168.16.16/28"]
+    #   }
+    #
+    #   outbound_endpoints = {
+    #     default = {}
+    #   }
+    #
+    #   forwarding_rulesets = {
+    #     default = {
+    #       rules = {
+    #         corp = {
+    #           domain_name = "corp.contoso.com."
+    #           target_dns_servers = [
+    #             { ip_address = "10.0.0.10" },
+    #             { ip_address = "10.0.0.11" },
+    #           ]
+    #         }
+    #       }
+    #     }
+    #   }
+    # }
   }
 }

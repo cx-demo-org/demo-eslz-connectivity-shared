@@ -172,6 +172,42 @@ variable "virtual_hubs" {
 
     tags = optional(map(string))
 
+    private_dns_resolver = optional(object({
+      # Optional separate RG placement for DNS resources.
+      # If unset, defaults to the hub's resource_group_key.
+      resource_group_key = optional(string)
+
+      # Private DNS Resolver name. If unset, defaults to "<hub-name>-pdr".
+      name = optional(string)
+
+      # Sidecar VNet used to host resolver endpoints.
+      sidecar_virtual_network = object({
+        name          = optional(string)
+        address_space = list(string)
+        tags          = optional(map(string))
+
+        virtual_hub_connection = optional(any)
+      })
+
+      # Subnets for the resolver endpoints.
+      inbound_subnet = object({
+        name             = optional(string)
+        address_prefixes = list(string)
+      })
+
+      outbound_subnet = object({
+        name             = optional(string)
+        address_prefixes = list(string)
+      })
+
+      # Optional endpoints + forwarding rules.
+      inbound_endpoints   = optional(any, {})
+      outbound_endpoints  = optional(any, {})
+      forwarding_rulesets = optional(any, {})
+
+      tags = optional(map(string))
+    }))
+
     firewall = optional(object({
       name     = string
       sku_tier = optional(string)
@@ -215,6 +251,20 @@ variable "virtual_hubs" {
       )
     ])
     error_message = "For any virtual_hubs[*] with firewall configured, you must set firewall.firewall_policy_id or firewall.firewall_policy_key."
+  }
+
+  validation {
+    condition = alltrue([
+      for hub_key, hub in var.virtual_hubs : (
+        try(hub.private_dns_resolver.resource_group_key, null) == null
+        ? true
+        : contains(
+          keys(merge(var.resource_groups, var.existing_resource_groups)),
+          hub.private_dns_resolver.resource_group_key
+        )
+      )
+    ])
+    error_message = "For any virtual_hubs[*] with private_dns_resolver.resource_group_key set, that key must exist in resource_groups or existing_resource_groups."
   }
 }
 

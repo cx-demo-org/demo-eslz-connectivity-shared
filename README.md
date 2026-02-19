@@ -18,6 +18,7 @@ Per environment (dev/prod) this repo can deploy:
 - Firewall policies + rule collection groups (tfvars-driven)
 - Virtual hubs (vHubs)
 - Optional secured hubs (Azure Firewall `AZFW_Hub` attached to a vHub)
+- Optional Private DNS Resolver (Azure DNS Private Resolver) hosted in a per-hub sidecar VNet
 - Optional ExpressRoute gateways (in each vHub)
 - Optional ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
 
@@ -65,7 +66,7 @@ Key inputs:
 
 - `resource_groups` / `existing_resource_groups`
 - `virtual_wan` (managed) **or** `existing_virtual_wan` (lookup) — exactly one must be set
-- `virtual_hubs` map (each hub can include optional `firewall` and optional `expressroute_gateway`)
+- `virtual_hubs` map (each hub can include optional `firewall`, optional `expressroute_gateway`, and optional `private_dns_resolver`)
 - `firewall_policies` map
 - `expressroute_circuits` map (optional)
 
