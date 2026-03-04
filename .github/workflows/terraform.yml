@@ -12,13 +12,18 @@ on:
         type: choice
         required: true
         default: plan
-        options: [plan, apply]
+        options: [plan, apply, destroy]
       stack:
         description: "Which environment(s) to run"
         type: choice
         required: true
         default: both
         options: [dev, prod, both]
+      confirm_destroy:
+        description: "Type DESTROY to confirm destroy (ignored unless action=destroy)"
+        type: string
+        required: false
+        default: ""
       force_apply:
         description: "Allow apply re-runs even if no new code changes exist"
         type: boolean
@@ -207,4 +212,72 @@ jobs:
             rm -rf .terraform
             terraform init -input=false -reconfigure -backend-config="environments/${stack}/backend.hcl"
             terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/${stack}/terraform.tfvars"
+          done
+
+  destroy:
+    name: destroy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard (prevent GUID leaks)
+        shell: bash
+        run: bash scripts/check_no_guids.sh
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+          audience: ${{ env.ARM_OIDC_AUDIENCE }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform destroy (selected environments)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event.inputs.confirm_destroy }}" != "DESTROY" ]]; then
+            echo "Refusing to destroy: set confirm_destroy=DESTROY"
+            exit 1
+          fi
+
+          stacks="dev prod"
+          case "${{ github.event.inputs.stack }}" in
+            dev) stacks="dev" ;;
+            prod) stacks="prod" ;;
+            both|*) stacks="dev prod" ;;
+          esac
+
+          for stack in ${stacks}; do
+            if [[ "${stack}" == "prod" ]]; then
+              echo "Refusing to destroy 'prod' from CI (always-on)."
+              echo "If you truly need this, run terraform destroy locally with the prod backend."
+              exit 1
+            fi
+
+            # Ensure backend.hcl placeholders were replaced.
+            if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${stack}/backend.hcl" >/dev/null; then
+              echo "ERROR: environments/${stack}/backend.hcl still contains placeholder values (##########)."
+              echo "Update backend.hcl to point to your remote state storage."
+              exit 1
+            fi
+
+            # Ensure terraform.tfvars placeholders were replaced.
+            if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${stack}/terraform.tfvars" >/dev/null; then
+              echo "ERROR: environments/${stack}/terraform.tfvars still contains placeholder values (##########)."
+              echo "Update terraform.tfvars (or use TF_VAR_* overrides in GitHub Actions) before running destroy."
+              exit 1
+            fi
+
+            echo "=== Destroying ${stack} ==="
+            rm -rf .terraform
+            terraform init -input=false -reconfigure -backend-config="environments/${stack}/backend.hcl"
+            terraform destroy -lock-timeout=10m -input=false -auto-approve -var-file="environments/${stack}/terraform.tfvars"
           done

@@ -21,6 +21,7 @@ Per environment (dev/prod) this repo can deploy:
 - Optional Private DNS Resolver (per vHub, deployed into a sidecar VNet)
 - Optional ExpressRoute gateways (in each vHub)
 - Optional ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
+- Optional Site-to-Site VPN (S2S VPN Gateway, VPN Sites, and Connections) per hub
 
 Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and referenced from other environments.
 
@@ -33,6 +34,7 @@ Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and re
 	- `modules/private_dns_resolver`: Private DNS Resolver + sidecar VNet + optional vHub connection
 	- `modules/expressroute_gateway`: AVM ExpressRoute Gateway (vWAN/vHub) wrapper
 	- `modules/expressroute_circuit`: AVM ExpressRoute Circuit wrapper
+	- `modules/site_to_site_vpn`: AVM S2S VPN Gateway + VPN Site + Connection wrapper
 - `environments/`
 	- `environments/dev/backend.hcl` + `environments/dev/terraform.tfvars`
 	- `environments/prod/backend.hcl` + `environments/prod/terraform.tfvars`
@@ -155,3 +157,6 @@ Useful root outputs include:
 - `private_dns_resolver_sidecar_vnet_ids`
 - `expressroute_gateway_ids`
 - `expressroute_circuit_ids`
+- `site_to_site_vpn_gateway_ids`
+- `site_to_site_vpn_site_ids`
+- `site_to_site_vpn_connection_ids`

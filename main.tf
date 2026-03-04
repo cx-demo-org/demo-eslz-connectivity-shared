@@ -236,3 +236,26 @@ module "expressroute_gateways" {
   scale_units                   = try(each.value.expressroute_gateway.scale_units, 1)
 }
 
+module "site_to_site_vpns" {
+  for_each = {
+    for hub_key, hub in var.virtual_hubs : hub_key => hub
+    if try(hub.site_to_site_vpn, null) != null
+  }
+
+  source = "./modules/site_to_site_vpn"
+
+  location            = each.value.location
+  resource_group_name = local.rg[each.value.resource_group_key].name
+  virtual_hub_id      = module.virtual_hubs[each.key].hub_id
+  virtual_wan_id      = local.virtual_wan_id
+
+  tags = merge(
+    local.rg[each.value.resource_group_key].tags,
+    try(each.value.tags, {})
+  )
+
+  vpn_gateways         = try(each.value.site_to_site_vpn.vpn_gateways, {})
+  vpn_sites            = try(each.value.site_to_site_vpn.vpn_sites, {})
+  vpn_site_connections = try(each.value.site_to_site_vpn.vpn_site_connections, {})
+}
+
