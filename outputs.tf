@@ -43,3 +43,18 @@ output "private_dns_resolver_sidecar_vnet_ids" {
   value       = { for hub_key, pdr_mod in module.private_dns_resolvers : hub_key => pdr_mod.sidecar_virtual_network_id }
 }
 
+output "site_to_site_vpn_gateway_ids" {
+  description = "Map of S2S VPN Gateway IDs by virtual hub key and gateway key."
+  value       = { for hub_key, s2s_mod in module.site_to_site_vpns : hub_key => s2s_mod.vpn_gateway_ids }
+}
+
+output "site_to_site_vpn_site_ids" {
+  description = "Map of VPN Site IDs by virtual hub key and site key."
+  value       = { for hub_key, s2s_mod in module.site_to_site_vpns : hub_key => s2s_mod.vpn_site_ids }
+}
+
+output "site_to_site_vpn_connection_ids" {
+  description = "Map of VPN Site Connection IDs by virtual hub key and connection key."
+  value       = { for hub_key, s2s_mod in module.site_to_site_vpns : hub_key => s2s_mod.vpn_site_connection_ids }
+}
+

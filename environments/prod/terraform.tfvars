@@ -401,6 +401,47 @@ virtual_hubs = {
       scale_units = 1
     }
 
+    # Optional: Site-to-Site VPN (S2S VPN Gateway + VPN Site + Connection)
+    # Placeholder values used until real on-prem details are provided.
+    site_to_site_vpn = {
+      vpn_gateways = {
+        prod = {
+          name       = "msft-vhub-prod-s2s-gw"
+          scale_unit = 1
+        }
+      }
+
+      vpn_sites = {
+        prod = {
+          name          = "msft-prod-vpn-site"
+          address_cidrs = ["10.100.0.0/24"]
+          links = [
+            {
+              name       = "prod-link-1"
+              ip_address = "203.0.113.10"
+            }
+          ]
+        }
+      }
+
+      # Note: Creating an S2S connection typically requires a pre-shared key.
+      # Keep connections disabled until the on-prem shared key is available.
+      #
+      # Example (uncomment when ready):
+      # vpn_site_connections = {
+      #   prod = {
+      #     name              = "msft-vhub-prod-to-onprem"
+      #     vpn_gateway_key   = "prod"
+      #     vpn_site_key      = "prod"
+      #     vpn_site_link_name = "prod-link-1"
+      #
+      #     # REQUIRED for connection creation
+      #     shared_key = "REPLACE_ME"
+      #   }
+      # }
+      vpn_site_connections = {}
+    }
+
     # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
     private_dns_resolver = {
       # resource_group_key = "prod_dns"  # optional: separate RG key for DNS resources

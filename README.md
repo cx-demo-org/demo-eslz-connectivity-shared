@@ -21,6 +21,7 @@ Per environment (dev/prod) this repo can deploy:
 - Optional Private DNS Resolver (Azure DNS Private Resolver) hosted in a per-hub sidecar VNet
 - Optional ExpressRoute gateways (in each vHub)
 - Optional ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
+- Optional Site-to-Site VPN (S2S VPN Gateway, VPN Sites, and Connections) per hub
 
 Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and referenced from other environments.
 
@@ -32,6 +33,7 @@ Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and re
 	- `modules/fwpolicy`: Azure Firewall Policy + rule collection groups
 	- `modules/expressroute_gateway`: AVM ExpressRoute Gateway (vWAN/vHub) wrapper
 	- `modules/expressroute_circuit`: AVM ExpressRoute Circuit wrapper
+	- `modules/site_to_site_vpn`: AVM S2S VPN Gateway + VPN Site + Connection wrapper
 - `environments/`
 	- `environments/dev/backend.hcl` + `environments/dev/terraform.tfvars`
 	- `environments/prod/backend.hcl` + `environments/prod/terraform.tfvars`
@@ -66,7 +68,7 @@ Key inputs:
 
 - `resource_groups` / `existing_resource_groups`
 - `virtual_wan` (managed) **or** `existing_virtual_wan` (lookup) — exactly one must be set
-- `virtual_hubs` map (each hub can include optional `firewall`, optional `expressroute_gateway`, and optional `private_dns_resolver`)
+- `virtual_hubs` map (each hub can include optional `firewall`, optional `expressroute_gateway`, optional `private_dns_resolver`, and optional `site_to_site_vpn`)
 - `firewall_policies` map
 - `expressroute_circuits` map (optional)
 
