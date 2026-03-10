@@ -36,6 +36,8 @@ env:
   # Azure CLI context for login; Terraform uses subscription_id from the env tfvars.
   ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || '1d70f8ca-f7e4-4d69-98fe-53959be8f10a' }}
   TF_IN_AUTOMATION: true
+  TF_REGISTRY_CLIENT_TIMEOUT: 120
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
   plan:
@@ -57,6 +59,18 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
+
+      - name: Prepare Terraform plugin cache
+        shell: bash
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - name: Cache Terraform plugin downloads
+        uses: actions/cache@v4
+        with:
+          path: .terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-plugin-cache-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-plugin-cache-
 
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
@@ -140,6 +154,18 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
+
+      - name: Prepare Terraform plugin cache
+        shell: bash
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - name: Cache Terraform plugin downloads
+        uses: actions/cache@v4
+        with:
+          path: .terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-plugin-cache-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-plugin-cache-
 
       - name: Terraform apply (selected environments)
         shell: bash
