@@ -1,6 +1,6 @@
 output "virtual_wan_id" {
   description = "Virtual WAN resource ID."
-  value       = module.alz_connectivity.resource_id
+  value       = module.alz_connectivity[0].resource_id
 }
 
 output "firewall_policy_ids" {
@@ -20,7 +20,11 @@ output "virtual_hub_firewall_ids" {
 
 output "expressroute_gateway_ids" {
   description = "Map of ExpressRoute Gateway ids by virtual hub key (only for hubs with expressroute_gateway configured)."
-  value       = coalesce(try(module.alz_connectivity.express_route_gateway_resource_ids, null), {})
+  value = {
+    for gw in try(module.alz_connectivity[0].express_route_gateway_resources, []) :
+    local.virtual_hub_keys_by_id[gw.virtual_hub_id] => gw.id
+    if try(local.virtual_hub_keys_by_id[gw.virtual_hub_id], null) != null
+  }
 }
 
 output "expressroute_circuit_ids" {
@@ -30,19 +34,19 @@ output "expressroute_circuit_ids" {
 
 output "private_dns_resolver_ids" {
   description = "Map of Private DNS Resolver IDs by virtual hub key (only for hubs with private_dns_resolver configured)."
-  value       = coalesce(try(module.alz_connectivity.private_dns_resolver_resource_ids, null), {})
+  value       = coalesce(try(module.alz_connectivity[0].private_dns_resolver_resource_ids, null), {})
 }
 
 output "private_dns_resolver_inbound_endpoint_ips" {
   description = "Map of inbound endpoint IPs by virtual hub key (and inbound endpoint key)."
   value = {
-    for hub_key, pdr_mod in coalesce(try(module.alz_connectivity.private_dns_resolver_resources, null), {}) : hub_key => try(pdr_mod.inbound_endpoint_ips, {})
+    for hub_key, pdr_mod in coalesce(try(module.alz_connectivity[0].private_dns_resolver_resources, null), {}) : hub_key => try(pdr_mod.inbound_endpoint_ips, {})
   }
 }
 
 output "private_dns_resolver_sidecar_vnet_ids" {
   description = "Map of sidecar VNet IDs by virtual hub key (only for hubs with private_dns_resolver configured)."
-  value       = coalesce(try(module.alz_connectivity.sidecar_virtual_network_resource_ids, null), {})
+  value       = coalesce(try(module.alz_connectivity[0].sidecar_virtual_network_resource_ids, null), {})
 }
 
 output "site_to_site_vpn_gateway_ids" {

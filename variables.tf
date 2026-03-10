@@ -181,11 +181,17 @@ variable "virtual_hubs" {
       inbound_subnet = object({
         name             = optional(string)
         address_prefixes = list(string)
+        network_security_group = optional(object({
+          id = string
+        }))
       })
 
       outbound_subnet = object({
         name             = optional(string)
         address_prefixes = list(string)
+        network_security_group = optional(object({
+          id = string
+        }))
       })
 
       # Optional endpoints + forwarding rules.

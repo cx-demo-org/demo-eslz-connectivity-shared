@@ -138,6 +138,8 @@ module "alz_connectivity" {
   source  = "Azure/avm-ptn-alz-connectivity-virtual-wan/azurerm"
   version = "0.13.5"
 
+  count = 1
+
   providers = {
     azurerm = azurerm.wan
     azapi   = azapi.wan
@@ -192,7 +194,7 @@ module "alz_connectivity" {
           allow_non_virtual_wan_traffic = try(hub.expressroute_gateway.allow_non_virtual_wan_traffic, false)
           scale_units                   = try(hub.expressroute_gateway.scale_units, 1)
           tags                          = merge(hub.tags, try(hub.expressroute_gateway.tags, {}))
-        } : {}
+        } : null
 
         vpn = hub.site_to_site_vpn != null && local.s2s_vpn_gateway_key_by_hub[hub_key] != null ? {
           name = try(
@@ -207,7 +209,7 @@ module "alz_connectivity" {
           routing_preference = try(hub.site_to_site_vpn.vpn_gateways[local.s2s_vpn_gateway_key_by_hub[hub_key]].routing_preference, null)
           scale_unit         = try(hub.site_to_site_vpn.vpn_gateways[local.s2s_vpn_gateway_key_by_hub[hub_key]].scale_unit, null)
           tags               = merge(hub.tags, try(hub.site_to_site_vpn.vpn_gateways[local.s2s_vpn_gateway_key_by_hub[hub_key]].tags, {}))
-        } : {}
+        } : null
       }
 
       vpn_sites = hub.site_to_site_vpn != null ? {
@@ -279,9 +281,10 @@ module "alz_connectivity" {
         } : null
 
         subnets = {
-          inbound = {
-            name             = hub.private_dns_resolver.inbound_subnet.name
-            address_prefixes = hub.private_dns_resolver.inbound_subnet.address_prefixes
+          dns_resolver = {
+            name                   = coalesce(try(hub.private_dns_resolver.inbound_subnet.name, null), "dns-inbound")
+            address_prefixes       = hub.private_dns_resolver.inbound_subnet.address_prefixes
+            network_security_group = try(hub.private_dns_resolver.inbound_subnet.network_security_group, null)
 
             delegations = [
               {
@@ -293,8 +296,9 @@ module "alz_connectivity" {
             ]
           }
           outbound = {
-            name             = hub.private_dns_resolver.outbound_subnet.name
-            address_prefixes = hub.private_dns_resolver.outbound_subnet.address_prefixes
+            name                   = coalesce(try(hub.private_dns_resolver.outbound_subnet.name, null), "dns-outbound")
+            address_prefixes       = hub.private_dns_resolver.outbound_subnet.address_prefixes
+            network_security_group = try(hub.private_dns_resolver.outbound_subnet.network_security_group, null)
 
             delegations = [
               {
@@ -321,7 +325,7 @@ module "alz_connectivity" {
             : { default = {} }
             ) : key => {
             name                         = try(ep.name, null)
-            subnet_name                  = hub.private_dns_resolver.inbound_subnet.name
+            subnet_name                  = coalesce(try(hub.private_dns_resolver.inbound_subnet.name, null), "dns-inbound")
             private_ip_allocation_method = try(ep.private_ip_allocation_method, "Dynamic")
             private_ip_address           = try(ep.private_ip_address, null)
             tags                         = try(ep.tags, null)
@@ -334,7 +338,7 @@ module "alz_connectivity" {
             name                   = try(ep.name, null)
             tags                   = try(ep.tags, null)
             merge_with_module_tags = true
-            subnet_name            = hub.private_dns_resolver.outbound_subnet.name
+            subnet_name            = coalesce(try(hub.private_dns_resolver.outbound_subnet.name, null), "dns-outbound")
 
             forwarding_ruleset = (
               length(try(hub.private_dns_resolver.forwarding_rulesets, {})) > 0 && key == (
@@ -409,8 +413,9 @@ module "alz_connectivity" {
 }
 
 locals {
-  virtual_hub_ids          = module.alz_connectivity.virtual_hub_resource_ids
-  virtual_hub_firewall_ids = module.alz_connectivity.firewall_resource_ids
+  virtual_hub_ids          = module.alz_connectivity[0].virtual_hub_resource_ids
+  virtual_hub_firewall_ids = module.alz_connectivity[0].firewall_resource_ids
+  virtual_hub_keys_by_id   = { for hub_key, hub_id in local.virtual_hub_ids : hub_id => hub_key }
 }
 
 check "s2s_vpn_single_gateway_in_owning_mode" {
