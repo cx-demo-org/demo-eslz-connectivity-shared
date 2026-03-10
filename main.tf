@@ -1,3 +1,6 @@
+# Virtual WAN defaults used by the AVM connectivity module:
+# - `virtual_wan_sku` defaults to Standard if not set.
+# - `virtual_wan_tags` merges resource group tags (if known) with explicit WAN tags.
 locals {
   virtual_wan_sku = try(var.virtual_wan.sku, "Standard")
   virtual_wan_tags = merge(
@@ -6,6 +9,8 @@ locals {
   )
 }
 
+# Normalize/augment per-hub input into a single map consumed throughout this repo:
+# adds RG id/name/tags and keeps optional feature blocks (firewall/ER/S2S/PDR/PDZ) under consistent keys.
 locals {
   virtual_hubs_effective = {
     for hub_key, hub in var.virtual_hubs : hub_key => {
@@ -29,6 +34,9 @@ locals {
   }
 }
 
+# Site-to-site VPN helpers for AVM "owning mode":
+# - select the single allowed vpn_gateway per hub (or null if none/invalid)
+# - map vpn site link names -> link numbers (AVM expects an instance number, not a link id)
 locals {
   s2s_vpn_gateway_key_by_hub = {
     for hub_key, hub in var.virtual_hubs : hub_key => (
@@ -69,6 +77,8 @@ data "azurerm_resource_group" "rg" {
   name = each.value.name
 }
 
+# Single lookup map for all resource groups referenced by the deployment:
+# merges RGs created by `module.resource_groups` and RGs sourced via `data.azurerm_resource_group.rg`.
 locals {
   rg = merge(
     { for rg_key, rg_mod in module.resource_groups : rg_key => { id = rg_mod.resource_id, name = rg_mod.name, location = rg_mod.location, tags = coalesce(try(rg_mod.resource.tags, null), try(var.resource_groups[rg_key].tags, {})) } },
@@ -412,6 +422,9 @@ module "alz_connectivity" {
   }
 }
 
+# Convenience locals derived from the AVM connectivity module outputs:
+# - keep hub/firewall resource IDs by hub key
+# - build a reverse lookup (hub id -> hub key) for cross-references.
 locals {
   virtual_hub_ids          = module.alz_connectivity[0].virtual_hub_resource_ids
   virtual_hub_firewall_ids = module.alz_connectivity[0].firewall_resource_ids
@@ -499,6 +512,8 @@ check "firewall_policy_required" {
   }
 }
 
+# Firewall policy id lookup that supports both managed and pre-existing policies.
+# Used when building hub firewall configuration (firewall_policy_key -> firewall_policy_id).
 locals {
   firewall_policy_ids = merge(
     { for policy_key, policy_mod in module.firewall_policies : policy_key => policy_mod.id },
