@@ -56,6 +56,17 @@ hub_tenant_id       = "9a9712e7-1382-4528-8495-b52ae7688acb"
 virtual_wan_subscription_id = "2f69b2b1-5fe0-487d-8c82-52f5edeb454e"
 virtual_wan_tenant_id       = "9a9712e7-1382-4528-8495-b52ae7688acb"
 
+# Mirrors AVM input `enable_telemetry`.
+enable_telemetry = false
+
+# Module-level tags (AVM input `tags`).
+# Most AVM-managed resources inherit tags from here unless a more specific
+# object-level `tags` override is provided.
+tags = {
+  environment = "prod"
+  workload    = "msft-vhub"
+}
+
 ###############################################
 # Virtual WAN (vWAN)
 #
@@ -67,20 +78,24 @@ virtual_wan_tenant_id       = "9a9712e7-1382-4528-8495-b52ae7688acb"
 # If the vWAN already exists, either:
 # - import it into this env state, or
 # - set create=false and supply resource_group_name to data-lookup instead.
-virtual_wan = {
-  name               = "msft-prod-sea-vwan"
-  resource_group_key = "prod_connectivity"
-  location           = "southeastasia"
-  sku                = "Standard"
+virtual_wan_settings = {
+  enabled_resources = {
+    ddos_protection_plan = false
+  }
 
-  enable_module_telemetry = false
+  virtual_wan = {
+    name                = "msft-prod-sea-vwan"
+    resource_group_name = "msft-prod-connectivity-rg"
+    location            = "southeastasia"
+    type                = "Standard"
 
-  allow_branch_to_branch_traffic = true
-  disable_vpn_encryption         = false
+    allow_branch_to_branch_traffic = true
+    disable_vpn_encryption         = false
 
-  tags = {
-    environment = "prod"
-    workload    = "msft-vwan"
+    tags = {
+      environment = "prod"
+      workload    = "msft-vwan"
+    }
   }
 }
 
@@ -387,113 +402,150 @@ virtual_hubs = {
   # Southeast Asia (southeastasia)
   ###############################################
   prod = {
-    name               = "msft-vhub-prod-sea"
-    resource_group_key = "prod_hub"
-    location           = "southeastasia"
-    address_prefix     = "10.2.0.0/20"
+    location          = "southeastasia"
+    default_parent_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg"
 
-    tags = {
-      environment = "prod"
-      workload    = "msft-vhub"
+    enabled_resources = {
+      firewall                              = true
+      firewall_policy                       = false
+      bastion                               = false
+      virtual_network_gateway_express_route = true
+      virtual_network_gateway_vpn           = true
+      private_dns_zones                     = true
+      private_dns_resolver                  = true
+      sidecar_virtual_network               = true
+    }
+
+    hub = {
+      name           = "msft-vhub-prod-sea"
+      address_prefix = "10.2.0.0/20"
+      tags = {
+        environment = "prod"
+        workload    = "msft-vhub"
+      }
     }
 
     firewall = {
-      name                = "msft-vhub-prod-sea-firewall"
-      firewall_policy_key = "prod"
+      name               = "msft-vhub-prod-sea-firewall"
+      sku_name           = "AZFW_Hub"
+      sku_tier           = "Standard"
+      firewall_policy_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/firewallPolicies/msft-vhub-prod-sea-firewall-policy"
+      zones              = []
     }
 
-    expressroute_gateway = {
-      name        = "msft-vhub-prod-sea-ergw"
-      scale_units = 1
-    }
-
-    # Optional: Site-to-Site VPN (S2S VPN Gateway + VPN Site + Connection)
-    #
-    # Keep vpn_site_connections empty until the on-prem shared key is available.
-    site_to_site_vpn = {
-      vpn_gateways = {
-        prod = {
-          # Site-to-site VPN gateway: msft-vhub-prod-sea-s2s-gw
-          name       = "msft-vhub-prod-sea-s2s-gw"
-          scale_unit = 1
-        }
+    virtual_network_gateways = {
+      express_route = {
+        name        = "msft-vhub-prod-sea-ergw"
+        scale_units = 1
       }
 
-      vpn_sites = {
-        prod = {
-          name          = "msft-prod-vpn-site"
-          address_cidrs = ["10.100.0.0/24"]
-          links = [
+      vpn = {
+        name       = "msft-vhub-prod-sea-s2s-gw"
+        scale_unit = 1
+      }
+    }
+
+    vpn_sites = {
+      prod = {
+        name          = "msft-prod-vpn-site"
+        address_cidrs = ["10.100.0.0/24"]
+        links = [
+          {
+            name       = "prod-link-1"
+            ip_address = "203.0.113.10"
+          }
+        ]
+      }
+    }
+
+    vpn_site_connections = {}
+
+    sidecar_virtual_network = {
+      name          = "msft-vnet-prod-sea-dns"
+      address_space = ["10.2.16.0/24"]
+
+      virtual_network_connection_settings = {
+        name                      = "msft-vnet-prod-sea-dns-to-vhub"
+        internet_security_enabled = false
+      }
+
+      subnets = {
+        dns_resolver = {
+          name             = "dns-inbound"
+          address_prefixes = ["10.2.16.0/28"]
+          network_security_group = {
+            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-inbound-nsg-southeastasia"
+          }
+          delegations = [
             {
-              name       = "prod-link-1"
-              ip_address = "203.0.113.10"
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
+            }
+          ]
+        }
+
+        outbound = {
+          name             = "dns-outbound"
+          address_prefixes = ["10.2.16.16/28"]
+          network_security_group = {
+            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-outbound-nsg-southeastasia"
+          }
+          delegations = [
+            {
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
             }
           ]
         }
       }
-
-      vpn_site_connections = {}
     }
 
-    # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
     private_dns_resolver = {
-      # resource_group_key = "prod_dns"  # optional: separate RG key for DNS resources
-      name = "msft-pdr-prod-sea"
+      name                             = "msft-pdr-prod-sea"
+      default_inbound_endpoint_enabled = false
 
-      sidecar_virtual_network = {
-        name          = "msft-vnet-prod-sea-dns"
-        address_space = ["10.2.16.0/24"]
-      }
-
-      inbound_subnet = {
-        address_prefixes = ["10.2.16.0/28"]
-        network_security_group = {
-          id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-inbound-nsg-southeastasia"
-        }
-      }
-
-      outbound_subnet = {
-        address_prefixes = ["10.2.16.16/28"]
-        network_security_group = {
-          id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-outbound-nsg-southeastasia"
+      inbound_endpoints = {
+        default = {
+          subnet_name                  = "dns-inbound"
+          private_ip_allocation_method = "Dynamic"
+          merge_with_module_tags       = true
         }
       }
 
       outbound_endpoints = {
-        default = {}
-      }
-
-      # Optional: DNS forwarding ruleset (hybrid/on-prem)
-      #
-      # Enabled by default for prod SEA and prod EU so both hubs have
-      # consistent DNS forwarding behavior.
-      #
-      # Update the domain and target DNS server IPs to match your environment.
-      #
-      # Note: if forwarding_rulesets is configured, keep exactly ONE outbound_endpoints entry.
-      #
-      forwarding_rulesets = {
         default = {
-          # DNS forwarding ruleset: ruleset-default-default
-          name = "ruleset-default-default"
+          subnet_name            = "dns-outbound"
+          merge_with_module_tags = true
 
-          rules = {
-            corp = {
-              domain_name = "corp.contoso.com."
-              target_dns_servers = [
-                { ip_address = "10.0.0.10", port = 53 },
-                { ip_address = "10.0.0.11", port = 53 },
-              ]
+          forwarding_ruleset = {
+            default = {
+              name                                        = "ruleset-default-default"
+              link_with_outbound_endpoint_virtual_network = true
+
+              rules = {
+                corp = {
+                  domain_name = "corp.contoso.com."
+                  destination_ip_addresses = {
+                    "10.0.0.10" = "53"
+                    "10.0.0.11" = "53"
+                  }
+                }
+              }
             }
           }
         }
       }
     }
 
-    # Private DNS Zones for Private Endpoints
-    # Uses the AVM module's built-in zone catalog (Microsoft Learn list).
-    # EU hub will, by default, only create the regional zones ({regionName}/{regionCode}).
     private_dns_zones = {
+      tags = {
+        environment = "prod"
+        workload    = "msft-vwan"
+      }
       auto_registration_zone_enabled = false
       private_link_private_dns_zones_regex_filter = {
         enabled = false
@@ -505,127 +557,113 @@ virtual_hubs = {
   # Europe (westeurope)
   ###############################################
   prod_eu = {
-    name               = "msft-vhub-prod-eu"
-    resource_group_key = "prod_hub_eu"
-    location           = "westeurope"
-    address_prefix     = "172.16.0.0/20"
+    location          = "westeurope"
+    default_parent_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg"
 
-    tags = {
-      environment = "prod"
-      workload    = "msft-vhub"
+    enabled_resources = {
+      firewall                              = true
+      firewall_policy                       = false
+      bastion                               = false
+      virtual_network_gateway_express_route = true
+      virtual_network_gateway_vpn           = false
+      private_dns_zones                     = true
+      private_dns_resolver                  = true
+      sidecar_virtual_network               = true
+    }
+
+    hub = {
+      name           = "msft-vhub-prod-eu"
+      address_prefix = "172.16.0.0/20"
+      tags = {
+        environment = "prod"
+        workload    = "msft-vhub"
+      }
     }
 
     firewall = {
-      name                = "msft-vhub-prod-eu-firewall"
-      firewall_policy_key = "prod_eu"
+      name               = "msft-vhub-prod-eu-firewall"
+      sku_name           = "AZFW_Hub"
+      sku_tier           = "Standard"
+      firewall_policy_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/firewallPolicies/msft-vhub-prod-eu-firewall-policy"
+      zones              = []
     }
 
-    expressroute_gateway = {
-      name        = "msft-vhub-prod-eu-ergw"
-      scale_units = 1
+    virtual_network_gateways = {
+      express_route = {
+        name        = "msft-vhub-prod-eu-ergw"
+        scale_units = 1
+      }
     }
 
-    # Optional: Site-to-Site VPN (S2S VPN Gateway + VPN Site + Connection)
-    #
-    # Placeholder (disabled by default). To create an S2S gateway named
-    # `msft-vhub-prod-eu-s2s-gw`, uncomment the block below and replace the
-    # sample on-prem details.
-    #
-    # site_to_site_vpn = {
-    #   vpn_gateways = {
-    #     prod = {
-    #       # Site-to-site VPN gateway: msft-vhub-prod-eu-s2s-gw
-    #       name       = "msft-vhub-prod-eu-s2s-gw"
-    #       scale_unit = 1
-    #     }
-    #   }
-    #
-    #   vpn_sites = {
-    #     prod = {
-    #       name          = "msft-prod-eu-vpn-site"
-    #       address_cidrs = ["10.100.0.0/24"]
-    #       links = [
-    #         {
-    #           name       = "prod-link-1"
-    #           ip_address = "203.0.113.10"
-    #         }
-    #       ]
-    #     }
-    #   }
-    #
-    #   vpn_site_connections = {
-    #     # prod = {
-    #     #   name            = "msft-vhub-prod-eu-to-onprem"
-    #     #   vpn_gateway_key = "prod"
-    #     #   vpn_site_key    = "prod"
-    #     #
-    #     #   vpn_links = [
-    #     #     {
-    #     #       name               = "prod-link-1"
-    #     #       vpn_site_link_name = "prod-link-1"
-    #     #       shared_key         = "REPLACE_ME"
-    #     #     }
-    #     #   ]
-    #     # }
-    #   }
-    # }
+    sidecar_virtual_network = {
+      name          = "msft-vnet-prod-eu-dns"
+      address_space = ["172.16.16.0/24"]
 
-    # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
-    private_dns_resolver = {
-      # resource_group_key = "prod_dns_eu"  # optional: separate RG key for DNS resources
-      name = "msft-pdr-prod-eu"
-
-      sidecar_virtual_network = {
-        name          = "msft-vnet-prod-eu-dns"
-        address_space = ["172.16.16.0/24"]
+      virtual_network_connection_settings = {
+        name                      = "msft-vnet-prod-eu-dns-to-vhub"
+        internet_security_enabled = false
       }
 
-      inbound_subnet = {
-        address_prefixes = ["172.16.16.0/28"]
-        network_security_group = {
-          id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-inbound-nsg-westeurope"
+      subnets = {
+        dns_resolver = {
+          name             = "dns-inbound"
+          address_prefixes = ["172.16.16.0/28"]
+          network_security_group = {
+            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-inbound-nsg-westeurope"
+          }
+          delegations = [
+            {
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
+            }
+          ]
+        }
+
+        outbound = {
+          name             = "dns-outbound"
+          address_prefixes = ["172.16.16.16/28"]
+          network_security_group = {
+            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-outbound-nsg-westeurope"
+          }
+          delegations = [
+            {
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
+            }
+          ]
         }
       }
+    }
 
-      outbound_subnet = {
-        address_prefixes = ["172.16.16.16/28"]
-        network_security_group = {
-          id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-outbound-nsg-westeurope"
+    private_dns_resolver = {
+      name                             = "msft-pdr-prod-eu"
+      default_inbound_endpoint_enabled = false
+
+      inbound_endpoints = {
+        default = {
+          subnet_name                  = "dns-inbound"
+          private_ip_allocation_method = "Dynamic"
+          merge_with_module_tags       = true
         }
       }
 
       outbound_endpoints = {
-        default = {}
+        default = {
+          subnet_name            = "dns-outbound"
+          merge_with_module_tags = true
+        }
       }
-
-      # Optional: DNS forwarding ruleset (hybrid/on-prem)
-      # Disabled by default for prod EU to avoid creating new DNS forwarding resources
-      # unless you explicitly want hybrid forwarding in this region.
-      #
-      # Note: if forwarding_rulesets is configured, keep exactly ONE outbound_endpoints entry.
-      #
-      # forwarding_rulesets = {
-      #   default = {
-      #     # DNS forwarding ruleset: ruleset-default-default
-      #     name = "ruleset-default-default"
-      #
-      #     rules = {
-      #       corp = {
-      #         domain_name = "corp.contoso.com."
-      #         target_dns_servers = [
-      #           { ip_address = "10.0.0.10", port = 53 },
-      #           { ip_address = "10.0.0.11", port = 53 },
-      #         ]
-      #       }
-      #     }
-      #   }
-      # }
     }
 
-    # Private DNS Zones for Private Endpoints
-    # Uses the AVM module's built-in zone catalog (Microsoft Learn list).
-    # For non-primary hubs, AVM defaults to creating only regional zones ({regionName}/{regionCode}).
     private_dns_zones = {
+      tags = {
+        environment = "prod"
+        workload    = "msft-vwan"
+      }
       auto_registration_zone_enabled = false
       private_link_private_dns_zones_regex_filter = {
         enabled      = true

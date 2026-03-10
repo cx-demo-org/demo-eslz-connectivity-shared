@@ -44,24 +44,58 @@ variable "existing_resource_groups" {
   default = {}
 }
 
-variable "virtual_wan" {
-  description = "Virtual WAN managed by Terraform (created in this environment's state)."
+variable "enable_telemetry" {
+  description = "Controls whether AVM module telemetry is enabled. Mirrors the AVM module input `enable_telemetry`."
+  type        = bool
+  default     = true
+}
 
+variable "tags" {
+  description = "(Optional) Module-level tags passed to the AVM module input `tags`."
+  type        = map(string)
+  default     = null
+}
+
+variable "default_naming_convention" {
+  description = "(Optional) Pass-through for the AVM module input `default_naming_convention`."
+  type        = any
+  default     = {}
+}
+
+variable "default_naming_convention_sequence" {
+  description = "(Optional) Pass-through for the AVM module input `default_naming_convention_sequence`."
   type = object({
-    name               = string
-    resource_group_key = string
-    location           = string
-
-    sku = optional(string)
-
-    allow_branch_to_branch_traffic = optional(bool)
-    disable_vpn_encryption         = optional(bool)
-
-    enable_module_telemetry = optional(bool)
-    tags                    = optional(map(string))
+    starting_number = number
+    padding_format  = string
   })
+  default = {
+    starting_number = 1
+    padding_format  = "%03d"
+  }
+}
 
-  # Required (prod/owning mode only).
+variable "retry" {
+  description = "(Optional) Pass-through for the AVM module input `retry`."
+  type        = any
+  default     = {}
+}
+
+variable "timeouts" {
+  description = "(Optional) Pass-through for the AVM module input `timeouts`."
+  type        = any
+  default     = {}
+}
+
+variable "private_link_private_dns_zone_virtual_network_link_moved_block_template_module_prefix" {
+  description = "(Optional) Temporary AVM migration input for private DNS zone VNet links. Mirrors the AVM module variable of the same name."
+  type        = string
+  default     = ""
+}
+
+variable "virtual_wan_settings" {
+  description = "Virtual WAN settings in the native AVM module schema. This is passed through to the AVM module input `virtual_wan_settings`."
+  type        = any
+  default     = {}
 }
 
 variable "firewall_policies" {
@@ -146,228 +180,8 @@ variable "expressroute_circuits" {
 }
 
 variable "virtual_hubs" {
-  description = "Virtual hubs keyed by logical name. Each hub is created and can optionally have an Azure Firewall attached."
-
-  type = map(object({
-    name               = string
-    resource_group_key = string
-    location           = string
-    address_prefix     = string
-
-    tags = optional(map(string))
-
-    # Optional: Private DNS Zones configuration (passed through to the AVM alz_connectivity module).
-    # Shape matches the AVM module's virtual_hubs[*].private_dns_zones input.
-    private_dns_zones = optional(any)
-
-    private_dns_resolver = optional(object({
-      # Optional separate RG placement for DNS resources.
-      # If unset, defaults to the hub's resource_group_key.
-      resource_group_key = optional(string)
-
-      # Private DNS Resolver name. If unset, defaults to "<hub-name>-pdr".
-      name = optional(string)
-
-      # Sidecar VNet used to host resolver endpoints.
-      sidecar_virtual_network = object({
-        name          = optional(string)
-        address_space = list(string)
-        tags          = optional(map(string))
-
-        virtual_hub_connection = optional(any)
-      })
-
-      # Subnets for the resolver endpoints.
-      inbound_subnet = object({
-        name             = optional(string)
-        address_prefixes = list(string)
-        network_security_group = optional(object({
-          id = string
-        }))
-      })
-
-      outbound_subnet = object({
-        name             = optional(string)
-        address_prefixes = list(string)
-        network_security_group = optional(object({
-          id = string
-        }))
-      })
-
-      # Optional endpoints + forwarding rules.
-      inbound_endpoints   = optional(any, {})
-      outbound_endpoints  = optional(any, {})
-      forwarding_rulesets = optional(any, {})
-
-      tags = optional(map(string))
-    }))
-
-    firewall = optional(object({
-      name     = string
-      sku_tier = optional(string)
-
-      firewall_policy_key = optional(string)
-      firewall_policy_id  = optional(string)
-
-      tags = optional(map(string))
-    }))
-
-    expressroute_gateway = optional(object({
-      name = optional(string)
-
-      allow_non_virtual_wan_traffic = optional(bool, false)
-      scale_units                   = optional(number, 1)
-
-      tags = optional(map(string))
-    }))
-
-    site_to_site_vpn = optional(object({
-      vpn_gateways = optional(map(object({
-        name                                  = string
-        tags                                  = optional(map(string))
-        bgp_route_translation_for_nat_enabled = optional(bool)
-        bgp_settings = optional(object({
-          instance_0_bgp_peering_address = optional(object({
-            custom_ips = list(string)
-          }))
-          instance_1_bgp_peering_address = optional(object({
-            custom_ips = list(string)
-          }))
-          peer_weight = number
-          asn         = number
-        }))
-        routing_preference = optional(string)
-        scale_unit         = optional(number)
-      })), {})
-
-      vpn_sites = optional(map(object({
-        name          = string
-        address_cidrs = optional(list(string))
-        device_model  = optional(string)
-        device_vendor = optional(string)
-        tags          = optional(map(string))
-        links = list(object({
-          name = string
-          bgp = optional(object({
-            asn             = number
-            peering_address = string
-          }))
-          fqdn          = optional(string)
-          ip_address    = optional(string)
-          provider_name = optional(string)
-          speed_in_mbps = optional(number)
-        }))
-        o365_policy = optional(object({
-          traffic_category = object({
-            allow_endpoint_enabled    = optional(bool)
-            default_endpoint_enabled  = optional(bool)
-            optimize_endpoint_enabled = optional(bool)
-          })
-        }))
-      })), {})
-
-      vpn_site_connections = optional(map(object({
-        name            = string
-        vpn_gateway_key = string
-        vpn_site_key    = string
-        vpn_links = list(object({
-          name                 = string
-          vpn_site_link_name   = string
-          egress_nat_rule_ids  = optional(list(string))
-          ingress_nat_rule_ids = optional(list(string))
-          bandwidth_mbps       = optional(number)
-          bgp_enabled          = optional(bool)
-          connection_mode      = optional(string)
-          ipsec_policy = optional(object({
-            dh_group                 = string
-            ike_encryption_algorithm = string
-            ike_integrity_algorithm  = string
-            encryption_algorithm     = string
-            integrity_algorithm      = string
-            pfs_group                = string
-            sa_data_size_kb          = string
-            sa_lifetime_sec          = string
-          }))
-          protocol                              = optional(string)
-          ratelimit_enabled                     = optional(bool)
-          route_weight                          = optional(number)
-          shared_key                            = optional(string)
-          local_azure_ip_address_enabled        = optional(bool)
-          policy_based_traffic_selector_enabled = optional(bool)
-          custom_bgp_addresses = optional(list(object({
-            ip_address          = string
-            ip_configuration_id = string
-          })))
-        }))
-        internet_security_enabled = optional(bool)
-        routing = optional(object({
-          associated_route_table = string
-          propagated_route_table = optional(object({
-            route_table_ids = optional(list(string))
-            labels          = optional(list(string))
-          }))
-          inbound_route_map_id  = optional(string)
-          outbound_route_map_id = optional(string)
-        }))
-        traffic_selector_policy = optional(object({
-          local_address_ranges  = list(string)
-          remote_address_ranges = list(string)
-        }))
-      })), {})
-    }))
-  }))
-
-  validation {
-    condition     = alltrue([for hub_key, hub in var.virtual_hubs : contains(keys(merge(var.resource_groups, var.existing_resource_groups)), hub.resource_group_key)])
-    error_message = "Each virtual_hubs[*].resource_group_key must exist in resource_groups or existing_resource_groups."
-  }
-
-  validation {
-    condition = alltrue([
-      for hub_key, hub in var.virtual_hubs : (
-        try(hub.expressroute_gateway, null) == null || try(hub.expressroute_gateway.scale_units, 1) >= 1
-      )
-    ])
-    error_message = "For any virtual_hubs[*] with expressroute_gateway configured, scale_units must be >= 1."
-  }
-
-  validation {
-    condition = alltrue([
-      for hub_key, hub in var.virtual_hubs : (
-        try(hub.firewall, null) == null || (
-          try(hub.firewall.firewall_policy_id, null) != null || try(hub.firewall.firewall_policy_key, null) != null
-        )
-      )
-    ])
-    error_message = "For any virtual_hubs[*] with firewall configured, you must set firewall.firewall_policy_id or firewall.firewall_policy_key."
-  }
-
-  validation {
-    condition = alltrue([
-      for hub_key, hub in var.virtual_hubs : (
-        try(hub.site_to_site_vpn, null) == null
-        || length(try(hub.site_to_site_vpn.vpn_site_connections, {})) == 0
-        || (
-          length(try(hub.site_to_site_vpn.vpn_gateways, {})) > 0
-          && length(try(hub.site_to_site_vpn.vpn_sites, {})) > 0
-        )
-      )
-    ])
-    error_message = "When site_to_site_vpn.vpn_site_connections are configured, you must also define vpn_gateways and vpn_sites."
-  }
-
-  validation {
-    condition = alltrue([
-      for hub_key, hub in var.virtual_hubs : (
-        try(hub.private_dns_resolver.resource_group_key, null) == null
-        ? true
-        : contains(
-          keys(merge(var.resource_groups, var.existing_resource_groups)),
-          hub.private_dns_resolver.resource_group_key
-        )
-      )
-    ])
-    error_message = "For any virtual_hubs[*] with private_dns_resolver.resource_group_key set, that key must exist in resource_groups or existing_resource_groups."
-  }
+  description = "Virtual hubs in the native AVM module schema. This is passed through to the AVM module input `virtual_hubs`."
+  type        = any
+  default     = {}
 }
 
