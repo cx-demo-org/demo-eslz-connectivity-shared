@@ -489,6 +489,13 @@ virtual_hubs = {
         }
       }
     }
+
+    # Private DNS Zones for Private Endpoints
+    # Uses the AVM module's built-in zone catalog (Microsoft Learn list).
+    # EU hub will, by default, only create the regional zones ({regionName}/{regionCode}).
+    private_dns_zones = {
+      auto_registration_zone_enabled = false
+    }
   }
 
   ###############################################
@@ -610,6 +617,13 @@ virtual_hubs = {
       #     }
       #   }
       # }
+    }
+
+    # Private DNS Zones for Private Endpoints
+    # Uses the AVM module's built-in zone catalog (Microsoft Learn list).
+    # For non-primary hubs, AVM defaults to creating only regional zones ({regionName}/{regionCode}).
+    private_dns_zones = {
+      auto_registration_zone_enabled = false
     }
   }
 }
