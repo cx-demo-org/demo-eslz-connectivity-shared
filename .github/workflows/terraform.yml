@@ -13,12 +13,6 @@ on:
         required: true
         default: plan
         options: [plan, apply]
-      stack:
-        description: "Which environment(s) to run"
-        type: choice
-        required: true
-        default: both
-        options: [dev, prod, both]
       force_apply:
         description: "Allow apply re-runs even if no new code changes exist"
         type: boolean
@@ -45,13 +39,8 @@ env:
 
 jobs:
   plan:
-    name: plan (${{ matrix.stack }})
+    name: plan (prod)
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        stack: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.stack != 'both') && fromJSON(format('["{0}"]', github.event.inputs.stack)) || fromJSON('["dev","prod"]') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -73,13 +62,13 @@ jobs:
         run: terraform fmt -check -recursive
 
       - name: Terraform init
-        run: terraform init -input=false -backend-config=environments/${{ matrix.stack }}/backend.hcl
+        run: terraform init -input=false -backend-config=environments/prod/backend.hcl
 
       - name: Terraform validate
         run: terraform validate
 
       - name: Terraform plan
-        run: terraform plan -lock-timeout=10m -input=false -no-color -var-file=environments/${{ matrix.stack }}/terraform.tfvars -out=tfplan
+        run: terraform plan -lock-timeout=10m -input=false -no-color -var-file=environments/prod/terraform.tfvars -out=tfplan
 
       - name: Terraform plan summary
         if: always()
@@ -98,14 +87,14 @@ jobs:
 
             echo "${summary}"
             {
-              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo "### Terraform plan summary (prod)"
               echo ""
               echo "\`${summary}\`"
             } >> "${GITHUB_STEP_SUMMARY}"
           else
             echo "Plan output not available."
             {
-              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo "### Terraform plan summary (prod)"
               echo ""
               echo "Plan output not available."
             } >> "${GITHUB_STEP_SUMMARY}"
@@ -116,17 +105,17 @@ jobs:
         shell: bash
         run: |
           if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan-${{ matrix.stack }}.txt
+            terraform show -no-color tfplan > plan-prod.txt
           else
-            echo "Plan output not available." > plan-${{ matrix.stack }}.txt
+            echo "Plan output not available." > plan-prod.txt
           fi
 
       - name: Upload plan artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-${{ matrix.stack }}
-          path: plan-${{ matrix.stack }}.txt
+          name: tfplan-prod
+          path: plan-prod.txt
           if-no-files-found: warn
 
   apply:
@@ -157,18 +146,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          stacks="prod dev"
-          if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
-            case "${{ github.event.inputs.stack }}" in
-              dev) stacks="dev" ;;
-              prod) stacks="prod" ;;
-              both|*) stacks="prod dev" ;;
-            esac
-          fi
-
-          for stack in ${stacks}; do
-            echo "=== Applying ${stack} ==="
-            rm -rf .terraform
-            terraform init -input=false -reconfigure -backend-config="environments/${stack}/backend.hcl"
-            terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/${stack}/terraform.tfvars"
-          done
+          echo "=== Applying prod ==="
+          rm -rf .terraform
+          terraform init -input=false -reconfigure -backend-config="environments/prod/backend.hcl"
+          terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/prod/terraform.tfvars"

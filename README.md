@@ -12,7 +12,7 @@ Terraform configuration to deploy a Virtual WAN based connectivity foundation us
 
 ## What this deploys
 
-Per environment (dev/prod) this repo can deploy:
+This repo can deploy:
 
 - Resource groups (optional; managed via `resource_groups`)
 - Firewall policies + rule collection groups (tfvars-driven)
@@ -23,18 +23,12 @@ Per environment (dev/prod) this repo can deploy:
 - Optional ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
 - Optional Site-to-Site VPN (S2S VPN Gateway, VPN Sites, and Connections) per hub
 
-Virtual WAN (vWAN) is intended to be created **once** (in `prod`) and referenced from `dev`.
-
 ## Repo layout
 
 - `modules/`
 	- `modules/fwpolicy`: Azure Firewall Policy + rule collection groups
-	- `modules/expressroute_gateway`: AVM ExpressRoute Gateway (vWAN/vHub) wrapper
 	- `modules/expressroute_circuit`: AVM ExpressRoute Circuit wrapper
-	- `modules/site_to_site_vpn`: AVM S2S VPN Gateway + VPN Site + Connection wrapper
-	- `modules/private_dns_resolver`: Azure DNS Private Resolver hosted in a per-hub sidecar VNet
 - `environments/`
-	- `environments/dev/backend.hcl` + `environments/dev/terraform.tfvars`
 	- `environments/prod/backend.hcl` + `environments/prod/terraform.tfvars`
 
 ## Architecture diagram
@@ -66,15 +60,14 @@ This repo’s CI is designed to authenticate to Azure **without secrets** using 
 There are two distinct “permission planes” you must satisfy:
 
 - **Azure control-plane RBAC** (ARM): create/update/read Azure resources (vWAN/vHub/Firewall/etc).
-- **Storage data-plane RBAC** (Blob): read/write Terraform remote state in the storage account container referenced by `environments/<stack>/backend.hcl`.
-- **Storage data-plane RBAC** (Blob): read/write Terraform remote state in the storage account container referenced by `environments/<stack>/backend.hcl`.
+- **Storage data-plane RBAC** (Blob): read/write Terraform remote state in the storage account container referenced by `environments/prod/backend.hcl`.
 
 #### Minimum Azure RBAC roles (typical)
 
 Pick the narrowest scopes you can. Common starting point:
 
 - On the **hub subscription(s)** (or the specific RGs): `Contributor`
-- On the **vWAN subscription** (or vWAN RG): `Contributor` (or `Reader` in dev if you only look up the vWAN)
+- On the **vWAN subscription** (or vWAN RG): `Contributor`
 - On the **state storage account scope** (or RG): `Storage Blob Data Contributor`
 
 Notes:
@@ -96,7 +89,7 @@ This repo uses a single root module with environment-specific tfvars.
 Key inputs:
 
 - `resource_groups` / `existing_resource_groups`
-- `virtual_wan` (managed) **or** `existing_virtual_wan` (lookup) — exactly one must be set
+- `virtual_wan` (managed)
 - `virtual_hubs` map (each hub can include optional `firewall`, optional `expressroute_gateway`, optional `private_dns_resolver`, and optional `site_to_site_vpn`)
 - `firewall_policies` map
 - `expressroute_circuits` map (optional)
@@ -119,22 +112,13 @@ From the repo root:
 	- `terraform plan -var-file=environments/prod/terraform.tfvars`
 	- `terraform apply -var-file=environments/prod/terraform.tfvars`
 
-- Dev:
-	- `terraform init -backend-config=environments/dev/backend.hcl`
-	- `terraform plan -var-file=environments/dev/terraform.tfvars`
-	- `terraform apply -var-file=environments/dev/terraform.tfvars`
-
-### Recommended apply order
-
-Run **prod first** so the vWAN exists, then run dev.
-
 ## How to run via GitHub Actions
 
 Workflow: `.github/workflows/terraform.yml`
 
-- `pull_request` to `main` runs **plan** for `dev` and `prod`.
 - `push` to `main` runs **plan + apply**.
-- `workflow_dispatch` supports `plan` or `apply` for `dev`, `prod`, or `both`.
+- `pull_request` to `main` runs **plan** for `prod`.
+- `workflow_dispatch` supports `plan` or `apply` for `prod`.
 
 The workflow uses `azure/login@v2` OIDC and expects repo variables (or defaults):
 

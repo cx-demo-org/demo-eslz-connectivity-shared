@@ -61,23 +61,7 @@ variable "virtual_wan" {
     tags                    = optional(map(string))
   })
 
-  default = null
-
-  validation {
-    condition     = (var.virtual_wan == null) != (var.existing_virtual_wan == null)
-    error_message = "You must set exactly one of virtual_wan (managed) or existing_virtual_wan (lookup)."
-  }
-}
-
-variable "existing_virtual_wan" {
-  description = "Existing Virtual WAN reference (data lookup). Use this for non-owning environments (e.g., dev referencing a prod-owned vWAN)."
-
-  type = object({
-    name                = string
-    resource_group_name = string
-  })
-
-  default = null
+  # Required (prod/owning mode only).
 }
 
 variable "firewall_policies" {
@@ -171,6 +155,10 @@ variable "virtual_hubs" {
     address_prefix     = string
 
     tags = optional(map(string))
+
+    # Optional: Private DNS Zones configuration (passed through to the AVM alz_connectivity module).
+    # Shape matches the AVM module's virtual_hubs[*].private_dns_zones input.
+    private_dns_zones = optional(any)
 
     private_dns_resolver = optional(object({
       # Optional separate RG placement for DNS resources.

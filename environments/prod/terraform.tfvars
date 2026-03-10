@@ -98,31 +98,37 @@ virtual_wan = {
 # 1) Create the circuit first (without peerings/connections),
 # 2) Share the service key with the provider, then
 # 3) Add peerings/connections only after the circuit is provisioned.
-expressroute_circuits = {
-  prod_primary = {
-    name               = "msft-prod-sea-er-circuit-01"
-    resource_group_key = "prod_hub"
-    location           = "southeastasia"
+# ExpressRoute circuits are optional. Keep this empty by default.
+#
+# To create the circuit shown below, uncomment the `prod_primary` block.
+expressroute_circuits = {}
 
-    sku = {
-      tier   = "Premium"
-      family = "MeteredData"
-    }
-
-    service_provider_name = "SingTel Domestic"
-    peering_location      = "Singapore"
-
-    # 1Gbps
-    bandwidth_in_mbps = 1000
-
-    enable_telemetry = false
-
-    tags = {
-      environment = "prod"
-      workload    = "msft-expressroute"
-    }
-  }
-}
+# expressroute_circuits = {
+#   prod_primary = {
+#     # ExpressRoute circuit: msft-prod-sea-er-circuit-01
+#     name               = "msft-prod-sea-er-circuit-01"
+#     resource_group_key = "prod_hub"
+#     location           = "southeastasia"
+#
+#     sku = {
+#       tier   = "Premium"
+#       family = "MeteredData"
+#     }
+#
+#     service_provider_name = "SingTel Domestic"
+#     peering_location      = "Singapore"
+#
+#     # 1Gbps
+#     bandwidth_in_mbps = 1000
+#
+#     enable_telemetry = false
+#
+#     tags = {
+#       environment = "prod"
+#       workload    = "msft-expressroute"
+#     }
+#   }
+# }
 
 ###############################################
 # Azure Firewall Policy + rules
@@ -402,45 +408,55 @@ virtual_hubs = {
     }
 
     # Optional: Site-to-Site VPN (S2S VPN Gateway + VPN Site + Connection)
-    # Placeholder values used until real on-prem details are provided.
-    site_to_site_vpn = {
-      vpn_gateways = {
-        prod = {
-          name       = "msft-vhub-prod-sea-s2s-gw"
-          scale_unit = 1
-        }
-      }
-
-      vpn_sites = {
-        prod = {
-          name          = "msft-prod-vpn-site"
-          address_cidrs = ["10.100.0.0/24"]
-          links = [
-            {
-              name       = "prod-link-1"
-              ip_address = "203.0.113.10"
-            }
-          ]
-        }
-      }
-
-      # Note: Creating an S2S connection typically requires a pre-shared key.
-      # Keep connections disabled until the on-prem shared key is available.
-      #
-      # Example (uncomment when ready):
-      # vpn_site_connections = {
-      #   prod = {
-      #     name              = "msft-vhub-prod-sea-to-onprem"
-      #     vpn_gateway_key   = "prod"
-      #     vpn_site_key      = "prod"
-      #     vpn_site_link_name = "prod-link-1"
-      #
-      #     # REQUIRED for connection creation
-      #     shared_key = "REPLACE_ME"
-      #   }
-      # }
-      vpn_site_connections = {}
-    }
+    #
+    # Placeholder (disabled by default). To create an S2S gateway named
+    # `msft-vhub-prod-sea-s2s-gw`, uncomment the block below and replace the
+    # sample on-prem details.
+    #
+    # Note: `vpn_site_connections` is modeled as a map of connections, each with
+    # a `vpn_links = []` list. Each link references the VPN site link by name via
+    # `vpn_site_link_name` and carries `shared_key`.
+    #
+    # site_to_site_vpn = {
+    #   vpn_gateways = {
+    #     prod = {
+    #       # Site-to-site VPN gateway: msft-vhub-prod-sea-s2s-gw
+    #       name       = "msft-vhub-prod-sea-s2s-gw"
+    #       scale_unit = 1
+    #     }
+    #   }
+    #
+    #   vpn_sites = {
+    #     prod = {
+    #       name          = "msft-prod-vpn-site"
+    #       address_cidrs = ["10.100.0.0/24"]
+    #       links = [
+    #         {
+    #           name       = "prod-link-1"
+    #           ip_address = "203.0.113.10"
+    #         }
+    #       ]
+    #     }
+    #   }
+    #
+    #   # Note: Creating an S2S connection typically requires a pre-shared key.
+    #   # Keep connections disabled until the on-prem shared key is available.
+    #   vpn_site_connections = {
+    #     # prod = {
+    #     #   name            = "msft-vhub-prod-sea-to-onprem"
+    #     #   vpn_gateway_key = "prod"
+    #     #   vpn_site_key    = "prod"
+    #     #
+    #     #   vpn_links = [
+    #     #     {
+    #     #       name               = "prod-link-1"
+    #     #       vpn_site_link_name = "prod-link-1"
+    #     #       shared_key         = "REPLACE_ME"
+    #     #     }
+    #     #   ]
+    #     # }
+    #   }
+    # }
 
     # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
     private_dns_resolver = {
@@ -465,11 +481,19 @@ virtual_hubs = {
       }
 
       # Optional: DNS forwarding ruleset (hybrid/on-prem)
-      # Uncomment and replace target DNS IPs to enable conditional forwarding.
+      #
+      # Enabled by default for prod SEA and prod EU so both hubs have
+      # consistent DNS forwarding behavior.
+      #
+      # Update the domain and target DNS server IPs to match your environment.
+      #
       # Note: if forwarding_rulesets is configured, keep exactly ONE outbound_endpoints entry.
       #
       forwarding_rulesets = {
         default = {
+          # DNS forwarding ruleset: ruleset-default-default
+          name = "ruleset-default-default"
+
           rules = {
             corp = {
               domain_name = "corp.contoso.com."
@@ -508,6 +532,51 @@ virtual_hubs = {
       scale_units = 1
     }
 
+    # Optional: Site-to-Site VPN (S2S VPN Gateway + VPN Site + Connection)
+    #
+    # Placeholder (disabled by default). To create an S2S gateway named
+    # `msft-vhub-prod-eu-s2s-gw`, uncomment the block below and replace the
+    # sample on-prem details.
+    #
+    # site_to_site_vpn = {
+    #   vpn_gateways = {
+    #     prod = {
+    #       # Site-to-site VPN gateway: msft-vhub-prod-eu-s2s-gw
+    #       name       = "msft-vhub-prod-eu-s2s-gw"
+    #       scale_unit = 1
+    #     }
+    #   }
+    #
+    #   vpn_sites = {
+    #     prod = {
+    #       name          = "msft-prod-eu-vpn-site"
+    #       address_cidrs = ["10.100.0.0/24"]
+    #       links = [
+    #         {
+    #           name       = "prod-link-1"
+    #           ip_address = "203.0.113.10"
+    #         }
+    #       ]
+    #     }
+    #   }
+    #
+    #   vpn_site_connections = {
+    #     # prod = {
+    #     #   name            = "msft-vhub-prod-eu-to-onprem"
+    #     #   vpn_gateway_key = "prod"
+    #     #   vpn_site_key    = "prod"
+    #     #
+    #     #   vpn_links = [
+    #     #     {
+    #     #       name               = "prod-link-1"
+    #     #       vpn_site_link_name = "prod-link-1"
+    #     #       shared_key         = "REPLACE_ME"
+    #     #     }
+    #     #   ]
+    #     # }
+    #   }
+    # }
+
     # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
     private_dns_resolver = {
       # resource_group_key = "prod_dns_eu"  # optional: separate RG key for DNS resources
@@ -531,19 +600,25 @@ virtual_hubs = {
       }
 
       # Optional: DNS forwarding ruleset (hybrid/on-prem)
-      # forwarding_rulesets = {
-      #   default = {
-      #     rules = {
-      #       corp = {
-      #         domain_name = "corp.contoso.com."
-      #         target_dns_servers = [
-      #           { ip_address = "ADD_YOUR_ONPREM_DNS_IP_1", port = 53 },
-      #           { ip_address = "ADD_YOUR_ONPREM_DNS_IP_2", port = 53 },
-      #         ]
-      #       }
-      #     }
-      #   }
-      # }
+      # Enabled by default so prod EU matches prod SEA.
+      # Update the domain and target DNS server IPs to match your environment.
+      # Note: if forwarding_rulesets is configured, keep exactly ONE outbound_endpoints entry.
+      forwarding_rulesets = {
+        default = {
+          # DNS forwarding ruleset: ruleset-default-default
+          name = "ruleset-default-default"
+
+          rules = {
+            corp = {
+              domain_name = "corp.contoso.com."
+              target_dns_servers = [
+                { ip_address = "10.0.0.10", port = 53 },
+                { ip_address = "10.0.0.11", port = 53 },
+              ]
+            }
+          }
+        }
+      }
     }
   }
 }
