@@ -1,6 +1,6 @@
 output "virtual_wan_id" {
-  description = "Virtual WAN resource ID (created or looked up)."
-  value       = local.virtual_wan_id
+  description = "Virtual WAN resource ID."
+  value       = module.alz_connectivity[0].resource_id
 }
 
 output "firewall_policy_ids" {
@@ -10,17 +10,21 @@ output "firewall_policy_ids" {
 
 output "virtual_hub_ids" {
   description = "Map of virtual hub ids by key."
-  value       = { for hub_key, hub_mod in module.virtual_hubs : hub_key => hub_mod.hub_id }
+  value       = local.virtual_hub_ids
 }
 
 output "virtual_hub_firewall_ids" {
   description = "Map of firewall ids by virtual hub key (null if not created)."
-  value       = { for hub_key, hub_mod in module.virtual_hubs : hub_key => hub_mod.firewall_id }
+  value       = local.virtual_hub_firewall_ids
 }
 
 output "expressroute_gateway_ids" {
   description = "Map of ExpressRoute Gateway ids by virtual hub key (only for hubs with expressroute_gateway configured)."
-  value       = { for hub_key, gw_mod in module.expressroute_gateways : hub_key => gw_mod.id }
+  value = {
+    for gw in try(module.alz_connectivity[0].express_route_gateway_resources, []) :
+    local.virtual_hub_keys_by_id[gw.virtual_hub_id] => gw.id
+    if try(local.virtual_hub_keys_by_id[gw.virtual_hub_id], null) != null
+  }
 }
 
 output "expressroute_circuit_ids" {
@@ -30,31 +34,33 @@ output "expressroute_circuit_ids" {
 
 output "private_dns_resolver_ids" {
   description = "Map of Private DNS Resolver IDs by virtual hub key (only for hubs with private_dns_resolver configured)."
-  value       = { for hub_key, pdr_mod in module.private_dns_resolvers : hub_key => pdr_mod.resolver_id }
+  value       = coalesce(try(module.alz_connectivity[0].private_dns_resolver_resource_ids, null), {})
 }
 
 output "private_dns_resolver_inbound_endpoint_ips" {
   description = "Map of inbound endpoint IPs by virtual hub key (and inbound endpoint key)."
-  value       = { for hub_key, pdr_mod in module.private_dns_resolvers : hub_key => pdr_mod.inbound_endpoint_ips }
+  value = {
+    for hub_key, pdr_mod in coalesce(try(module.alz_connectivity[0].private_dns_resolver_resources, null), {}) : hub_key => try(pdr_mod.inbound_endpoint_ips, {})
+  }
 }
 
 output "private_dns_resolver_sidecar_vnet_ids" {
   description = "Map of sidecar VNet IDs by virtual hub key (only for hubs with private_dns_resolver configured)."
-  value       = { for hub_key, pdr_mod in module.private_dns_resolvers : hub_key => pdr_mod.sidecar_virtual_network_id }
+  value       = coalesce(try(module.alz_connectivity[0].sidecar_virtual_network_resource_ids, null), {})
 }
 
 output "site_to_site_vpn_gateway_ids" {
   description = "Map of S2S VPN Gateway IDs by virtual hub key and gateway key."
-  value       = { for hub_key, s2s_mod in module.site_to_site_vpns : hub_key => s2s_mod.vpn_gateway_ids }
+  value       = {}
 }
 
 output "site_to_site_vpn_site_ids" {
   description = "Map of VPN Site IDs by virtual hub key and site key."
-  value       = { for hub_key, s2s_mod in module.site_to_site_vpns : hub_key => s2s_mod.vpn_site_ids }
+  value       = {}
 }
 
 output "site_to_site_vpn_connection_ids" {
   description = "Map of VPN Site Connection IDs by virtual hub key and connection key."
-  value       = { for hub_key, s2s_mod in module.site_to_site_vpns : hub_key => s2s_mod.vpn_site_connection_ids }
+  value       = {}
 }
 

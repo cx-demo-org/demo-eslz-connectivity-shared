@@ -1,7 +1,9 @@
 terraform {
   required_version = ">= 1.9, < 2.0"
 
-  backend "azurerm" {}
+  backend "azurerm" {
+    use_azuread_auth = true
+  }
 
   required_providers {
     azurerm = {
@@ -10,7 +12,7 @@ terraform {
     }
     azapi = {
       source  = "Azure/azapi"
-      version = "~> 2.0"
+      version = "~> 2.4"
     }
     modtm = {
       source  = "Azure/modtm"

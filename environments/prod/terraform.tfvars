@@ -5,23 +5,43 @@
 # then reference from other blocks (vWAN, vHub, firewall policy, ExpressRoute).
 #
 # Key = internal handle used by `resource_group_key` references.
+#
+# Optional vs baseline
+# - Baseline in most deployments: `virtual_wan_settings` + `virtual_hubs`.
+# - Optional: everything else (firewall policy/rules, ExpressRoute circuits,
+#   monitoring workspaces, etc.) can be omitted or left empty to disable.
 ###############################################
 resource_groups = {
+  ###############################################
+  # Southeast Asia (southeastasia)
+  ###############################################
   prod_connectivity = {
-    name     = "demo-prod-connectivity-rg"
+    name     = "msft-prod-connectivity-rg"
     location = "southeastasia"
     tags = {
       environment = "prod"
-      workload    = "demo-vwan"
+      workload    = "msft-vwan"
     }
   }
 
   prod_hub = {
-    name     = "demo-vhub-prod-rg"
+    name     = "msft-connectivity-prod-sea-rg"
     location = "southeastasia"
     tags = {
       environment = "prod"
-      workload    = "demo-vhub"
+      workload    = "msft-vhub"
+    }
+  }
+
+  ###############################################
+  # Europe (westeurope)
+  ###############################################
+  prod_hub_eu = {
+    name     = "msft-connectivity-prod-eu-rg"
+    location = "westeurope"
+    tags = {
+      environment = "prod"
+      workload    = "msft-vhub"
     }
   }
 }
@@ -34,12 +54,91 @@ resource_groups = {
 # - vWAN subscription: vWAN create/lookup (prod owns the shared vWAN).
 ###############################################
 # Target subscription/tenant for hub resources (vHub, Azure Firewall, Firewall Policy, etc.)
-hub_subscription_id = "ADD_YOUR_HUB_SUBSCRIPTION_ID"
-hub_tenant_id       = "ADD_YOUR_TENANT_ID"
+hub_subscription_id = "00000000-0000-0000-0000-000000000000"
+hub_tenant_id       = "00000000-0000-0000-0000-000000000000"
 
 # vWAN subscription/tenant (prod owns/creates the vWAN in this state).
-virtual_wan_subscription_id = "ADD_YOUR_VWAN_SUBSCRIPTION_ID"
-virtual_wan_tenant_id       = "ADD_YOUR_TENANT_ID"
+virtual_wan_subscription_id = "00000000-0000-0000-0000-000000000000"
+virtual_wan_tenant_id       = "00000000-0000-0000-0000-000000000000"
+
+# Mirrors AVM input `enable_telemetry`.
+enable_telemetry = false
+
+# Module-level tags (AVM input `tags`).
+# Most AVM-managed resources inherit tags from here unless a more specific
+# object-level `tags` override is provided.
+tags = {
+  environment = "prod"
+  workload    = "msft-vhub"
+}
+
+###############################################
+# Monitoring (Azure Firewall)
+#
+# Creates one dedicated Log Analytics Workspace per vHub firewall
+# and wires Azure Firewall diagnostics (allLogs + AllMetrics) to it.
+#
+# Optional:
+# - Omit this block (or set it to `{}`) to avoid creating firewall monitoring.
+# - Map keys must match the `virtual_hubs` hub keys (e.g., `prod`, `prod_eu`).
+###############################################
+firewall_log_analytics_workspaces = {
+  # Southeast Asia (southeastasia) - vHub key: prod
+  prod = {
+    name               = "msft-prod-sea-firewall-law"
+    resource_group_key = "prod_hub"
+    tags = {
+      environment = "prod"
+      workload    = "msft-firewall-law"
+    }
+  }
+
+  # Europe (westeurope) - vHub key: prod_eu
+  prod_eu = {
+    name               = "msft-prod-eu-firewall-law"
+    resource_group_key = "prod_hub_eu"
+    tags = {
+      environment = "prod"
+      workload    = "msft-firewall-law"
+    }
+  }
+}
+
+###############################################
+# Monitoring (ExpressRoute Gateway)
+#
+# Creates one dedicated Log Analytics Workspace per vHub ExpressRoute gateway
+# and wires ExpressRoute gateway diagnostics (AllMetrics) to it.
+#
+# Optional:
+# - Omit this block (or set it to `{}`) to avoid creating ExpressRoute gateway monitoring.
+# - Map keys must match the `virtual_hubs` hub keys (e.g., `prod`, `prod_eu`).
+#
+# Note: ExpressRoute Gateway diagnostic categories can vary by resource type.
+# For vWAN ExpressRoute Gateways, Azure currently exposes `AllMetrics` and may
+# not expose log categories.
+###############################################
+expressroute_gateway_log_analytics_workspaces = {
+  # Southeast Asia (southeastasia) - vHub key: prod
+  prod = {
+    name               = "msft-prod-sea-ergw-law"
+    resource_group_key = "prod_hub"
+    tags = {
+      environment = "prod"
+      workload    = "msft-ergw-law"
+    }
+  }
+
+  # Europe (westeurope) - vHub key: prod_eu
+  prod_eu = {
+    name               = "msft-prod-eu-ergw-law"
+    resource_group_key = "prod_hub_eu"
+    tags = {
+      environment = "prod"
+      workload    = "msft-ergw-law"
+    }
+  }
+}
 
 ###############################################
 # Virtual WAN (vWAN)
@@ -52,20 +151,24 @@ virtual_wan_tenant_id       = "ADD_YOUR_TENANT_ID"
 # If the vWAN already exists, either:
 # - import it into this env state, or
 # - set create=false and supply resource_group_name to data-lookup instead.
-virtual_wan = {
-  name               = "demo-prod-sea-vwan"
-  resource_group_key = "prod_connectivity"
-  location           = "southeastasia"
-  sku                = "Standard"
+virtual_wan_settings = {
+  enabled_resources = {
+    ddos_protection_plan = false
+  }
 
-  enable_module_telemetry = false
+  virtual_wan = {
+    name                = "msft-prod-sea-vwan"
+    resource_group_name = "msft-prod-connectivity-rg"
+    location            = "southeastasia"
+    type                = "Standard"
 
-  allow_branch_to_branch_traffic = true
-  disable_vpn_encryption         = false
+    allow_branch_to_branch_traffic = true
+    disable_vpn_encryption         = false
 
-  tags = {
-    environment = "prod"
-    workload    = "demo-vwan"
+    tags = {
+      environment = "prod"
+      workload    = "msft-vwan"
+    }
   }
 }
 
@@ -83,9 +186,14 @@ virtual_wan = {
 # 1) Create the circuit first (without peerings/connections),
 # 2) Share the service key with the provider, then
 # 3) Add peerings/connections only after the circuit is provisioned.
+# ExpressRoute circuits are optional. Keep this empty by default.
+#
+# ExpressRoute circuits (optional).
+# If a circuit already exists and is in state, keep it defined here to avoid destroy.
 expressroute_circuits = {
   prod_primary = {
-    name               = "demo-prod-sea-er-circuit-01"
+    # ExpressRoute circuit: msft-prod-sea-er-circuit-01
+    name               = "msft-prod-sea-er-circuit-01"
     resource_group_key = "prod_hub"
     location           = "southeastasia"
 
@@ -104,7 +212,7 @@ expressroute_circuits = {
 
     tags = {
       environment = "prod"
-      workload    = "demo-expressroute"
+      workload    = "msft-expressroute"
     }
   }
 }
@@ -116,13 +224,16 @@ expressroute_circuits = {
 # Rules are tfvars-driven to make egress/allow-lists easy to customize.
 ###############################################
 firewall_policies = {
+  ###############################################
+  # Southeast Asia (southeastasia)
+  ###############################################
   prod = {
-    name               = "demo-vhub-prod-firewall-policy"
+    name               = "msft-vhub-prod-sea-firewall-policy"
     resource_group_key = "prod_hub"
     location           = "southeastasia"
     tags = {
       environment = "prod"
-      workload    = "demo-fwpolicy"
+      workload    = "msft-fwpolicy"
     }
 
     # Rules are explicitly managed via tfvars so end users can customize them.
@@ -171,6 +282,7 @@ firewall_policies = {
                   "*.securitycenter.windows.com",
                   "*.cloud.defender.microsoft.com",
                   "*.hcp.southeastasia.azmk8s.io",
+                  "*.microsoft.com",
                   "southeastasia.handler.control.monitor.azure.com",
                   "southeastasia.dp.kubernetesconfiguration.azure.com",
                 ]
@@ -232,6 +344,123 @@ firewall_policies = {
       }
     }
   }
+
+  ###############################################
+  # Europe (westeurope)
+  ###############################################
+  prod_eu = {
+    name               = "msft-vhub-prod-eu-firewall-policy"
+    resource_group_key = "prod_hub_eu"
+    location           = "westeurope"
+    tags = {
+      environment = "prod"
+      workload    = "msft-fwpolicy"
+    }
+
+    # Start with the same baseline allow-list as SEA, then tailor as needed.
+    rule_collection_groups = {
+      "aks-egress" = {
+        priority = 200
+
+        application_rule_collections = {
+          "aks-app" = {
+            priority = 200
+            action   = "Allow"
+
+            rules = [
+              {
+                name             = "aks-platform-fqdns"
+                source_addresses = ["*"]
+                protocols        = [{ type = "Http", port = 80 }, { type = "Https", port = 443 }]
+                destination_fqdns = [
+                  "*.azmk8s.io",
+                  "mcr.microsoft.com",
+                  "*.data.mcr.microsoft.com",
+                  "mcr-0001.mcr-msedge.net",
+                  "*.cdn.mscr.io",
+                  "*.blob.core.windows.net",
+                  "archive.ubuntu.com",
+                  "security.ubuntu.com",
+                  "azure.archive.ubuntu.com",
+                  "packages.microsoft.com",
+                  "download.microsoft.com",
+                  "management.azure.com",
+                  "login.microsoftonline.com",
+                  "graph.microsoft.com",
+                  "acs-mirror.azureedge.net",
+                  "packages.aks.azure.com",
+                  "*.ods.opinsights.azure.com",
+                  "*.oms.opinsights.azure.com",
+                  "*.monitoring.azure.com",
+                  "dc.services.visualstudio.com",
+                  "*.in.applicationinsights.azure.com",
+                  "global.handler.control.monitor.azure.com",
+                  "*.handler.control.monitor.azure.com",
+                  "*.ingest.monitor.azure.com",
+                  "*.metrics.ingest.monitor.azure.com",
+                  "data.policy.core.windows.net",
+                  "store.policy.core.windows.net",
+                  "*.securitycenter.windows.com",
+                  "*.cloud.defender.microsoft.com",
+                ]
+              },
+              {
+                name                  = "aks-fqdn-tag"
+                source_addresses      = ["*"]
+                protocols             = [{ type = "Http", port = 80 }, { type = "Https", port = 443 }]
+                destination_fqdn_tags = ["AzureKubernetesService"]
+              },
+            ]
+          }
+        }
+
+        network_rule_collections = {
+          "aks-network" = {
+            priority = 210
+            action   = "Allow"
+
+            rules = [
+              {
+                name                  = "aks-controlplane-udp-1194"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["AzureCloud.westeurope"]
+                destination_ports     = ["1194"]
+              },
+              {
+                name                  = "aks-controlplane-tcp-9000"
+                protocols             = ["TCP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["AzureCloud.westeurope"]
+                destination_ports     = ["9000"]
+              },
+              {
+                name                  = "dns-udp"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["53"]
+              },
+              {
+                name                  = "dns-tcp"
+                protocols             = ["TCP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["53"]
+              },
+              {
+                name                  = "ntp-udp"
+                protocols             = ["UDP"]
+                source_addresses      = ["*"]
+                destination_addresses = ["*"]
+                destination_ports     = ["123"]
+              },
+            ]
+          }
+        }
+      }
+    }
+  }
 }
 
 ###############################################
@@ -242,63 +471,276 @@ firewall_policies = {
 # - ExpressRoute gateway (Virtual WAN gateway inside the vHub)
 ###############################################
 virtual_hubs = {
+  ###############################################
+  # Southeast Asia (southeastasia)
+  ###############################################
   prod = {
-    name               = "demo-vhub-prod"
-    resource_group_key = "prod_hub"
-    location           = "southeastasia"
-    address_prefix     = "10.2.0.0/20"
+    location          = "southeastasia"
+    default_parent_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-sea-rg"
 
-    tags = {
-      environment = "prod"
-      workload    = "demo-vhub"
+    enabled_resources = {
+      firewall                              = true
+      firewall_policy                       = false
+      bastion                               = false
+      virtual_network_gateway_express_route = true
+      virtual_network_gateway_vpn           = true
+      private_dns_zones                     = true
+      private_dns_resolver                  = true
+      sidecar_virtual_network               = true
+    }
+
+    hub = {
+      name           = "msft-vhub-prod-sea"
+      address_prefix = "10.2.0.0/20"
+      tags = {
+        environment = "prod"
+        workload    = "msft-vhub"
+      }
     }
 
     firewall = {
-      name                = "demo-vhub-prod-firewall"
-      firewall_policy_key = "prod"
+      name               = "msft-vhub-prod-sea-firewall"
+      sku_name           = "AZFW_Hub"
+      sku_tier           = "Standard"
+      firewall_policy_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/firewallPolicies/msft-vhub-prod-sea-firewall-policy"
+      zones              = []
     }
 
-    expressroute_gateway = {
-      name        = "demo-vhub-prod-ergw"
-      scale_units = 1
+    virtual_network_gateways = {
+      express_route = {
+        name        = "msft-vhub-prod-sea-ergw"
+        scale_units = 1
+      }
+
+      vpn = {
+        name       = "msft-vhub-prod-sea-s2s-gw"
+        scale_unit = 1
+      }
     }
 
-    # Optional: Private DNS Resolver (creates sidecar VNet + vHub connection + resolver)
+    vpn_sites = {
+      prod = {
+        name          = "msft-prod-vpn-site"
+        address_cidrs = ["10.100.0.0/24"]
+        links = [
+          {
+            name       = "prod-link-1"
+            ip_address = "203.0.113.10"
+          }
+        ]
+      }
+    }
+
+    vpn_site_connections = {}
+
+    sidecar_virtual_network = {
+      name          = "msft-vnet-prod-sea-dns"
+      address_space = ["10.2.16.0/24"]
+
+      virtual_network_connection_settings = {
+        name                      = "msft-vnet-prod-sea-dns-to-vhub"
+        internet_security_enabled = false
+      }
+
+      subnets = {
+        dns_resolver = {
+          name             = "dns-inbound"
+          address_prefixes = ["10.2.16.0/28"]
+          network_security_group = {
+            id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-inbound-nsg-southeastasia"
+          }
+          delegations = [
+            {
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
+            }
+          ]
+        }
+
+        outbound = {
+          name             = "dns-outbound"
+          address_prefixes = ["10.2.16.16/28"]
+          network_security_group = {
+            id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-outbound-nsg-southeastasia"
+          }
+          delegations = [
+            {
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
+            }
+          ]
+        }
+      }
+    }
+
     private_dns_resolver = {
-      # resource_group_key = "prod_dns"  # optional: separate RG key for DNS resources
-      name = "demo-pdr-prod"
+      name                             = "msft-pdr-prod-sea"
+      default_inbound_endpoint_enabled = false
 
-      sidecar_virtual_network = {
-        name          = "demo-vnet-prod-dns"
-        address_space = ["10.2.16.0/24"]
-      }
-
-      inbound_subnet = {
-        address_prefixes = ["10.2.16.0/28"]
-      }
-
-      outbound_subnet = {
-        address_prefixes = ["10.2.16.16/28"]
+      inbound_endpoints = {
+        default = {
+          subnet_name                  = "dns-inbound"
+          private_ip_allocation_method = "Dynamic"
+          merge_with_module_tags       = true
+        }
       }
 
       outbound_endpoints = {
-        default = {}
-      }
-
-      # DNS forwarding ruleset (hybrid/on-prem placeholder)
-      # Note: if forwarding_rulesets is configured, keep exactly ONE outbound_endpoints entry.
-      forwarding_rulesets = {
         default = {
-          rules = {
-            corp = {
-              domain_name = "corp.contoso.com."
-              target_dns_servers = [
-                { ip_address = "10.0.0.10", port = 53 },
-                { ip_address = "10.0.0.11", port = 53 },
-              ]
+          subnet_name            = "dns-outbound"
+          merge_with_module_tags = true
+
+          forwarding_ruleset = {
+            default = {
+              name                                        = "ruleset-default-default"
+              link_with_outbound_endpoint_virtual_network = true
+
+              rules = {
+                corp = {
+                  domain_name = "corp.contoso.com."
+                  destination_ip_addresses = {
+                    "10.0.0.10" = "53"
+                    "10.0.0.11" = "53"
+                  }
+                }
+              }
             }
           }
         }
+      }
+    }
+
+    private_dns_zones = {
+      tags = {
+        environment = "prod"
+        workload    = "msft-vwan"
+      }
+      auto_registration_zone_enabled = false
+      private_link_private_dns_zones_regex_filter = {
+        enabled = false
+      }
+    }
+  }
+
+  ###############################################
+  # Europe (westeurope)
+  ###############################################
+  prod_eu = {
+    location          = "westeurope"
+    default_parent_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-eu-rg"
+
+    enabled_resources = {
+      firewall                              = true
+      firewall_policy                       = false
+      bastion                               = false
+      virtual_network_gateway_express_route = true
+      virtual_network_gateway_vpn           = false
+      private_dns_zones                     = true
+      private_dns_resolver                  = true
+      sidecar_virtual_network               = true
+    }
+
+    hub = {
+      name           = "msft-vhub-prod-eu"
+      address_prefix = "172.16.0.0/20"
+      tags = {
+        environment = "prod"
+        workload    = "msft-vhub"
+      }
+    }
+
+    firewall = {
+      name               = "msft-vhub-prod-eu-firewall"
+      sku_name           = "AZFW_Hub"
+      sku_tier           = "Standard"
+      firewall_policy_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/firewallPolicies/msft-vhub-prod-eu-firewall-policy"
+      zones              = []
+    }
+
+    virtual_network_gateways = {
+      express_route = {
+        name        = "msft-vhub-prod-eu-ergw"
+        scale_units = 1
+      }
+    }
+
+    sidecar_virtual_network = {
+      name          = "msft-vnet-prod-eu-dns"
+      address_space = ["172.16.16.0/24"]
+
+      virtual_network_connection_settings = {
+        name                      = "msft-vnet-prod-eu-dns-to-vhub"
+        internet_security_enabled = false
+      }
+
+      subnets = {
+        dns_resolver = {
+          name             = "dns-inbound"
+          address_prefixes = ["172.16.16.0/28"]
+          network_security_group = {
+            id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-inbound-nsg-westeurope"
+          }
+          delegations = [
+            {
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
+            }
+          ]
+        }
+
+        outbound = {
+          name             = "dns-outbound"
+          address_prefixes = ["172.16.16.16/28"]
+          network_security_group = {
+            id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-outbound-nsg-westeurope"
+          }
+          delegations = [
+            {
+              name = "dnsResolvers"
+              service_delegation = {
+                name = "Microsoft.Network/dnsResolvers"
+              }
+            }
+          ]
+        }
+      }
+    }
+
+    private_dns_resolver = {
+      name                             = "msft-pdr-prod-eu"
+      default_inbound_endpoint_enabled = false
+
+      inbound_endpoints = {
+        default = {
+          subnet_name                  = "dns-inbound"
+          private_ip_allocation_method = "Dynamic"
+          merge_with_module_tags       = true
+        }
+      }
+
+      outbound_endpoints = {
+        default = {
+          subnet_name            = "dns-outbound"
+          merge_with_module_tags = true
+        }
+      }
+    }
+
+    private_dns_zones = {
+      tags = {
+        environment = "prod"
+        workload    = "msft-vwan"
+      }
+      auto_registration_zone_enabled = false
+      private_link_private_dns_zones_regex_filter = {
+        enabled      = true
+        regex_filter = "{regionName}|{regionCode}"
       }
     }
   }
