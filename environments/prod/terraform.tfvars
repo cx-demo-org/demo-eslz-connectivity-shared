@@ -571,7 +571,7 @@ virtual_hubs = {
       address_prefix = "10.2.0.0/20"
 
       # Optional AVM hub settings (explicit here so they are TFVARS-configurable).
-      hub_routing_preference               = "ExpressRoute"
+      hub_routing_preference                 = "ExpressRoute"
       virtual_router_auto_scale_min_capacity = 2
       tags = {
         environment = "prod"
@@ -730,7 +730,7 @@ virtual_hubs = {
       address_prefix = "172.16.0.0/20"
 
       # Optional AVM hub settings (explicit here so they are TFVARS-configurable).
-      hub_routing_preference               = "ExpressRoute"
+      hub_routing_preference                 = "ExpressRoute"
       virtual_router_auto_scale_min_capacity = 2
       tags = {
         environment = "prod"
