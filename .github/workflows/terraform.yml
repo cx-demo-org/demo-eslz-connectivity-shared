@@ -12,9 +12,14 @@ on:
         type: choice
         required: true
         default: plan
-        options: [plan, apply]
+        options: [plan, apply, destroy]
       force_apply:
         description: "Allow apply re-runs even if no new code changes exist"
+        type: boolean
+        required: true
+        default: false
+      confirm_destroy:
+        description: "Confirm destroy (must be checked to run destroy)"
         type: boolean
         required: true
         default: false
@@ -43,6 +48,8 @@ jobs:
   plan:
     name: plan (prod)
     runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'workflow_dispatch' || github.event.inputs.action != 'destroy'
 
     steps:
       - uses: actions/checkout@v4
@@ -216,3 +223,72 @@ jobs:
           done
 
           terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/prod/terraform.tfvars"
+
+  destroy:
+    name: destroy (prod)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'destroy' &&
+      github.event.inputs.confirm_destroy == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+          audience: ${{ env.ARM_OIDC_AUDIENCE }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Prepare Terraform plugin cache
+        shell: bash
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - name: Cache Terraform plugin downloads
+        uses: actions/cache@v4
+        with:
+          path: .terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-plugin-cache-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-plugin-cache-
+
+      - name: Terraform init (retry)
+        shell: bash
+        run: |
+          set -u
+
+          max_attempts=5
+          attempt=1
+          while true; do
+            echo "terraform init attempt ${attempt}/${max_attempts}"
+            if terraform init -input=false -backend-config=environments/prod/backend.hcl; then
+              break
+            fi
+
+            if [[ ${attempt} -ge ${max_attempts} ]]; then
+              echo "terraform init failed after ${max_attempts} attempts"
+              exit 1
+            fi
+
+            sleep_seconds=$((attempt * 20))
+            echo "Retrying in ${sleep_seconds}s..."
+            sleep "${sleep_seconds}"
+            attempt=$((attempt + 1))
+          done
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform destroy plan
+        run: terraform plan -destroy -lock-timeout=10m -input=false -no-color -var-file=environments/prod/terraform.tfvars -out=tfdestroyplan
+
+      - name: Terraform destroy apply
+        run: terraform apply -lock-timeout=10m -input=false -auto-approve tfdestroyplan

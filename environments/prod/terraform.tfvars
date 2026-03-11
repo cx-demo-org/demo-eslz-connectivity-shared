@@ -73,6 +73,83 @@ tags = {
 }
 
 ###############################################
+# Network Security Groups (NSGs)
+#
+# Created in this stack so subnets can reference them by key.
+###############################################
+network_security_groups = {
+  prod_sea_dns_inbound = {
+    name               = "msft-vnet-prod-sea-dns-dns-inbound-nsg-southeastasia"
+    resource_group_key = "prod_hub"
+  }
+
+  prod_sea_dns_outbound = {
+    name               = "msft-vnet-prod-sea-dns-dns-outbound-nsg-southeastasia"
+    resource_group_key = "prod_hub"
+  }
+
+  prod_eu_dns_inbound = {
+    name               = "msft-vnet-prod-eu-dns-dns-inbound-nsg-westeurope"
+    resource_group_key = "prod_hub_eu"
+  }
+
+  prod_eu_dns_outbound = {
+    name               = "msft-vnet-prod-eu-dns-dns-outbound-nsg-westeurope"
+    resource_group_key = "prod_hub_eu"
+  }
+}
+
+###############################################
+# RBAC (Azure Role Assignments)
+#
+# AVM basic usage: provide Entra object IDs + explicit scope IDs.
+#
+# This grants `Owner` on the prod resource groups to:
+# - Group: ad58e86d-fdc0-4a37-9eee-83f7bab3a201
+# - User:  dff70d67-3efe-4549-a63f-f8e1e6f3ec9d
+###############################################
+role_assignments_azure_resource_manager = {
+  # Southeast Asia hub RG
+  prod_hub_owner_group = {
+    principal_id         = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
+    role_definition_name = "Owner"
+    scope_resource_group_key = "prod_hub"
+  }
+
+  prod_hub_owner_user = {
+    principal_id         = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
+    role_definition_name = "Owner"
+    scope_resource_group_key = "prod_hub"
+  }
+
+  # Europe hub RG
+  prod_hub_eu_owner_group = {
+    principal_id         = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
+    role_definition_name = "Owner"
+    scope_resource_group_key = "prod_hub_eu"
+  }
+
+  prod_hub_eu_owner_user = {
+    principal_id         = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
+    role_definition_name = "Owner"
+    scope_resource_group_key = "prod_hub_eu"
+  }
+
+  # Shared connectivity RG (vWAN RG)
+  prod_connectivity_owner_group = {
+    principal_id         = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
+    role_definition_name = "Owner"
+    scope_resource_group_key = "prod_connectivity"
+  }
+
+  prod_connectivity_owner_user = {
+    principal_id         = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
+    role_definition_name = "Owner"
+    scope_resource_group_key = "prod_connectivity"
+  }
+}
+
+###############################################
 # Monitoring (Azure Firewall)
 #
 # Creates one dedicated Log Analytics Workspace per vHub firewall
@@ -476,7 +553,7 @@ virtual_hubs = {
   ###############################################
   prod = {
     location          = "southeastasia"
-    default_parent_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg"
+    default_parent_resource_group_key = "prod_hub"
 
     enabled_resources = {
       firewall                              = true
@@ -502,7 +579,7 @@ virtual_hubs = {
       name               = "msft-vhub-prod-sea-firewall"
       sku_name           = "AZFW_Hub"
       sku_tier           = "Standard"
-      firewall_policy_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/firewallPolicies/msft-vhub-prod-sea-firewall-policy"
+      firewall_policy_key = "prod"
       zones              = []
     }
 
@@ -547,7 +624,7 @@ virtual_hubs = {
           name             = "dns-inbound"
           address_prefixes = ["10.2.16.0/28"]
           network_security_group = {
-            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-inbound-nsg-southeastasia"
+            key = "prod_sea_dns_inbound"
           }
           delegations = [
             {
@@ -563,7 +640,7 @@ virtual_hubs = {
           name             = "dns-outbound"
           address_prefixes = ["10.2.16.16/28"]
           network_security_group = {
-            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-sea-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-sea-dns-dns-outbound-nsg-southeastasia"
+            key = "prod_sea_dns_outbound"
           }
           delegations = [
             {
@@ -631,7 +708,7 @@ virtual_hubs = {
   ###############################################
   prod_eu = {
     location          = "westeurope"
-    default_parent_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg"
+    default_parent_resource_group_key = "prod_hub_eu"
 
     enabled_resources = {
       firewall                              = true
@@ -657,7 +734,7 @@ virtual_hubs = {
       name               = "msft-vhub-prod-eu-firewall"
       sku_name           = "AZFW_Hub"
       sku_tier           = "Standard"
-      firewall_policy_id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/firewallPolicies/msft-vhub-prod-eu-firewall-policy"
+      firewall_policy_key = "prod_eu"
       zones              = []
     }
 
@@ -682,7 +759,7 @@ virtual_hubs = {
           name             = "dns-inbound"
           address_prefixes = ["172.16.16.0/28"]
           network_security_group = {
-            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-inbound-nsg-westeurope"
+            key = "prod_eu_dns_inbound"
           }
           delegations = [
             {
@@ -698,7 +775,7 @@ virtual_hubs = {
           name             = "dns-outbound"
           address_prefixes = ["172.16.16.16/28"]
           network_security_group = {
-            id = "/subscriptions/2f69b2b1-5fe0-487d-8c82-52f5edeb454e/resourceGroups/msft-connectivity-prod-eu-rg/providers/Microsoft.Network/networkSecurityGroups/msft-vnet-prod-eu-dns-dns-outbound-nsg-westeurope"
+            key = "prod_eu_dns_outbound"
           }
           delegations = [
             {

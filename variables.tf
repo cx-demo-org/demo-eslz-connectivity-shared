@@ -130,6 +130,40 @@ variable "existing_firewall_policies" {
   default = {}
 }
 
+variable "network_security_groups" {
+  description = "(Optional) Network Security Groups to create, keyed by a logical name. Intended to support day-0 deployments without pasting NSG IDs into tfvars."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+    location           = optional(string)
+    tags               = optional(map(string), {})
+  }))
+
+  default = {}
+
+  validation {
+    condition     = alltrue([for k, nsg in var.network_security_groups : contains(keys(merge(var.resource_groups, var.existing_resource_groups)), nsg.resource_group_key)])
+    error_message = "Each network_security_groups[*].resource_group_key must exist in resource_groups or existing_resource_groups."
+  }
+}
+
+variable "existing_network_security_groups" {
+  description = "(Optional) Existing Network Security Groups (data lookup), keyed by a logical name. Use this when NSGs are managed outside this Terraform state."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+  }))
+
+  default = {}
+
+  validation {
+    condition     = alltrue([for k, nsg in var.existing_network_security_groups : contains(keys(merge(var.resource_groups, var.existing_resource_groups)), nsg.resource_group_key)])
+    error_message = "Each existing_network_security_groups[*].resource_group_key must exist in resource_groups or existing_resource_groups."
+  }
+}
+
 variable "expressroute_circuits" {
   description = "ExpressRoute Circuits to create (optional). Each circuit is created in a specified resource group via resource_group_key."
 
@@ -218,6 +252,40 @@ variable "expressroute_gateway_log_analytics_workspaces" {
   validation {
     condition     = alltrue([for k, ws in var.expressroute_gateway_log_analytics_workspaces : contains(keys(merge(var.resource_groups, var.existing_resource_groups)), ws.resource_group_key)])
     error_message = "Each expressroute_gateway_log_analytics_workspaces[*].resource_group_key must exist in resource_groups or existing_resource_groups."
+  }
+}
+
+variable "role_assignments_azure_resource_manager" {
+  description = <<EOT
+(Optional) Direct pass-through to the AVM role assignment module input `role_assignments_azure_resource_manager`.
+
+This matches the AVM module "Basic usage" examples: you provide the `principal_id`, `scope`, and either `role_definition_name` or `role_definition_id`.
+
+Prefer this input when you already have Entra object IDs and want the simplest possible tfvars experience.
+EOT
+
+  type = map(object({
+    role_definition_id                     = optional(string)
+    role_definition_name                   = optional(string)
+    principal_type                         = optional(string)
+    principal_id                           = string
+    scope                                  = optional(string)
+    scope_resource_group_key               = optional(string)
+    condition                              = optional(string)
+    condition_version                      = optional(string)
+    delegated_managed_identity_resource_id = optional(string)
+    description                            = optional(string)
+    skip_service_principal_aad_check       = optional(bool, false)
+  }))
+
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for k, ra in var.role_assignments_azure_resource_manager :
+      try(ra.scope, null) != null || try(ra.scope_resource_group_key, null) != null
+    ])
+    error_message = "Each role_assignments_azure_resource_manager entry must set either 'scope' or 'scope_resource_group_key'."
   }
 }
 
