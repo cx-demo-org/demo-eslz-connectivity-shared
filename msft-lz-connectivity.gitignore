@@ -19,8 +19,7 @@
 **/*.auto.tfvars
 **/*.auto.tfvars.json
 
-# Exceptions (repo-tracked vars for demo/dev scenarios)
-!demo-fwpolicy-dev/dev.auto.tfvars
+# Exceptions (repo-tracked vars for demos)
 
 # OS / editor
 .DS_Store

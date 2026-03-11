@@ -6,54 +6,42 @@
 > [!NOTE]
 > AVM modules may introduce changes over time (including breaking changes). For AVM bugs or feature requests, please raise issues with the relevant AVM module repository.
 
-# demo-eslz-connectivity-shared
+# msft-eslz-connectivity
 
 Terraform configuration to deploy a Virtual WAN based connectivity foundation using AVM modules.
 
 ## What this deploys
 
-Per environment (dev/prod) this repo can deploy:
+This repo can deploy:
 
-- Resource groups (optional; managed via `resource_groups`)
-- Firewall policies + rule collection groups (tfvars-driven)
-- Virtual hubs (vHubs)
-- Optional secured hubs (Azure Firewall `AZFW_Hub` attached to a vHub)
-- Optional Private DNS Resolver (per vHub, deployed into a sidecar VNet)
-- Optional ExpressRoute gateways (in each vHub)
-- Optional ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
-- Optional Site-to-Site VPN (S2S VPN Gateway, VPN Sites, and Connections) per hub
+- Baseline (typically deployed):
+	- Virtual WAN (vWAN) (create or lookup) + optional DDoS Protection Plan configuration
+	- Virtual hubs (vHubs)
 
-Virtual WAN (vWAN) is intended to be created **once** (typically in prod) and referenced from other environments.
+- Optional (enabled via tfvars):
+	- Resource groups (managed via `resource_groups`)
+	- Firewall policies + rule collection groups (tfvars-driven)
+	- Secured hubs (Azure Firewall `AZFW_Hub` attached to a vHub)
+	- Monitoring for Azure Firewall (dedicated Log Analytics Workspace per hub + diagnostic settings)
+	- Private DNS Resolver (Azure DNS Private Resolver) hosted in a per-hub sidecar VNet
+	- ExpressRoute gateways (in each vHub)
+	- Monitoring for ExpressRoute gateways (dedicated Log Analytics Workspace per hub + diagnostic settings/metrics)
+	- ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
+	- Site-to-Site VPN (S2S VPN Gateway, VPN Sites, and Connections) per hub
 
 ## Repo layout
 
 - `modules/`
-	- `modules/vwan`: AVM Virtual WAN wrapper
-	- `modules/vhub`: AVM Virtual Hub wrapper + optional Azure Firewall
 	- `modules/fwpolicy`: Azure Firewall Policy + rule collection groups
-	- `modules/private_dns_resolver`: Private DNS Resolver + sidecar VNet + optional vHub connection
-	- `modules/expressroute_gateway`: AVM ExpressRoute Gateway (vWAN/vHub) wrapper
 	- `modules/expressroute_circuit`: AVM ExpressRoute Circuit wrapper
-	- `modules/site_to_site_vpn`: AVM S2S VPN Gateway + VPN Site + Connection wrapper
 - `environments/`
-	- `environments/dev/backend.hcl` + `environments/dev/terraform.tfvars`
 	- `environments/prod/backend.hcl` + `environments/prod/terraform.tfvars`
 
 ## Architecture diagram
 
 The architecture diagram is shown below:
 
-![demo-eslz-connectivity-shared architecture](./eslz-connectivity.png)
-
-## Template placeholders (required)
-
-This repository is intentionally sanitized and contains placeholder values (for example, `ADD_YOUR_SUBSCRIPTION_ID`) for environment-specific identifiers.
-
-Before `terraform init/plan/apply` (locally or in GitHub Actions), you must:
-
-- Update `environments/dev/backend.hcl` and `environments/prod/backend.hcl` to point at your remote state storage.
-- Set real subscription/tenant IDs in `environments/*/terraform.tfvars` (or override via `TF_VAR_*` environment variables).
-- Configure GitHub Actions repo variables used for Azure OIDC login (`ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`).
+![msft-eslz-connectivity architecture](./eslz-connectivity-v3.png)
 
 ## Prerequisites
 
@@ -66,10 +54,39 @@ Before `terraform init/plan/apply` (locally or in GitHub Actions), you must:
 The executing identity typically needs, at minimum:
 
 - On the hub subscription(s): permissions to create/read RGs, vHubs, firewalls, firewall policies, and optionally ExpressRoute resources.
-- On the vWAN subscription (if different): permissions to create/read vWAN (prod) and/or read vWAN (dev).
+- On the vWAN subscription (if different): permissions to create/read vWAN.
 - On the state subscription: permissions to read/write blob state (Storage Account).
 
 If you see `403` errors like `Microsoft.Resources/subscriptions/providers/read`, assign at least `Reader` at subscription scope plus appropriate contributor rights for the resources you manage.
+
+### GitHub Actions (OIDC) permissions model
+
+This repo’s CI is designed to authenticate to Azure **without secrets** using GitHub Actions OIDC (`azure/login@v2`).
+
+There are two distinct “permission planes” you must satisfy:
+
+- **Azure control-plane RBAC** (ARM): create/update/read Azure resources (vWAN/vHub/Firewall/etc).
+- **Storage data-plane RBAC** (Blob): read/write Terraform remote state in the storage account container referenced by `environments/prod/backend.hcl`.
+
+#### Minimum Azure RBAC roles (typical)
+
+Pick the narrowest scopes you can. Common starting point:
+
+- On the **hub subscription(s)** (or the specific RGs): `Contributor`
+- On the **vWAN subscription** (or vWAN RG): `Contributor`
+- On the **state storage account scope** (or RG): `Storage Blob Data Contributor`
+
+Notes:
+
+- `Contributor` does **not** grant data-plane access to blobs; you must explicitly grant `Storage Blob Data Contributor`.
+- If your Terraform config creates role assignments, the identity also needs `User Access Administrator` or `Owner` at the target scopes.
+
+#### Permissions needed to create the OIDC integration
+
+The person running the setup commands needs:
+
+- Microsoft Entra permissions to create an app registration / service principal (e.g., Application Administrator).
+- Azure permissions to assign roles at the target scopes (e.g., `Owner` or `User Access Administrator`).
 
 ## Configuration model
 
@@ -78,8 +95,8 @@ This repo uses a single root module with environment-specific tfvars.
 Key inputs:
 
 - `resource_groups` / `existing_resource_groups`
-- `virtual_wan` (managed) **or** `existing_virtual_wan` (lookup) — exactly one must be set
-- `virtual_hubs` map (each hub can include optional `firewall`, optional `private_dns_resolver`, and optional `expressroute_gateway`)
+- `virtual_wan` (managed)
+- `virtual_hubs` map (each hub can include optional `firewall`, optional `expressroute_gateway`, optional `private_dns_resolver`, and optional `site_to_site_vpn`)
 - `firewall_policies` map
 - `expressroute_circuits` map (optional)
 
@@ -101,22 +118,13 @@ From the repo root:
 	- `terraform plan -var-file=environments/prod/terraform.tfvars`
 	- `terraform apply -var-file=environments/prod/terraform.tfvars`
 
-- Dev:
-	- `terraform init -backend-config=environments/dev/backend.hcl`
-	- `terraform plan -var-file=environments/dev/terraform.tfvars`
-	- `terraform apply -var-file=environments/dev/terraform.tfvars`
-
-### Recommended apply order
-
-If dev references an existing vWAN (via `existing_virtual_wan`), run **prod first** so the vWAN exists, then run dev.
-
 ## How to run via GitHub Actions
 
 Workflow: `.github/workflows/terraform.yml`
 
-- `pull_request` to `main` runs **plan** for `dev` and `prod`.
 - `push` to `main` runs **plan + apply**.
-- `workflow_dispatch` supports `plan` or `apply`.
+- `pull_request` to `main` runs **plan** for `prod`.
+- `workflow_dispatch` supports `plan` or `apply` for `prod`.
 
 The workflow uses `azure/login@v2` OIDC and expects repo variables (or defaults):
 
@@ -125,6 +133,139 @@ The workflow uses `azure/login@v2` OIDC and expects repo variables (or defaults)
 - `ARM_SUBSCRIPTION_ID` (used only for Azure login context; Terraform uses subscription IDs from tfvars)
 
 Make sure the GitHub OIDC app registration has federated credentials for this repo/branch.
+
+### One-time setup: Create GitHub OIDC auth for this repo (Azure CLI)
+
+This section is the “copy/paste” setup to let a customer run a small set of commands to enable the workflows.
+
+#### 0) Decide your values
+
+Set these in your shell (examples shown):
+
+```bash
+# Azure
+AZ_TENANT_ID="00000000-0000-0000-0000-000000000000"
+AZ_SUBSCRIPTION_ID="00000000-0000-0000-0000-000000000000"  # login context
+
+# GitHub
+GH_ORG="cx-demo-org"
+GH_REPO="msft-eslz-connectivity"
+GH_BRANCH="main"
+
+# Naming
+APP_NAME="${GH_REPO}-gha-oidc"
+```
+
+Login and select the subscription you want as the **login context** for CI:
+
+```bash
+az login --tenant "$AZ_TENANT_ID"
+az account set --subscription "$AZ_SUBSCRIPTION_ID"
+```
+
+#### 1) Create an Entra app registration + service principal
+
+```bash
+APP_ID="$(az ad app create --display-name "$APP_NAME" --query appId -o tsv)"
+APP_OBJECT_ID="$(az ad app show --id "$APP_ID" --query id -o tsv)"
+az ad sp create --id "$APP_ID" >/dev/null
+SP_OBJECT_ID="$(az ad sp show --id "$APP_ID" --query id -o tsv)"
+echo "APP_ID=$APP_ID"
+echo "APP_OBJECT_ID=$APP_OBJECT_ID"
+echo "SP_OBJECT_ID=$SP_OBJECT_ID"
+```
+
+#### 2) Add federated credentials for GitHub Actions
+
+GitHub uses different `sub` (subject) claims depending on event type.
+
+This workflow runs on:
+
+- `push` to `main`
+- `pull_request` targeting `main`
+- `workflow_dispatch` (manual)
+
+Create **both** federated credentials below:
+
+```bash
+cat > federated-cred-push.json <<'JSON'
+{
+	"name": "github-push-main",
+	"issuer": "https://token.actions.githubusercontent.com",
+	"subject": "repo:GH_ORG/GH_REPO:ref:refs/heads/GH_BRANCH",
+	"description": "GitHub Actions OIDC - push/manual runs on branch",
+	"audiences": ["api://AzureADTokenExchange"]
+}
+JSON
+
+sed -i "s/GH_ORG/$GH_ORG/g; s/GH_REPO/$GH_REPO/g; s/GH_BRANCH/$GH_BRANCH/g" federated-cred-push.json
+# macOS note: if you see an error from sed, try: sed -i '' "..." federated-cred-push.json
+
+az ad app federated-credential create \
+	--id "$APP_OBJECT_ID" \
+	--parameters @federated-cred-push.json
+
+cat > federated-cred-pr.json <<'JSON'
+{
+	"name": "github-pull-request",
+	"issuer": "https://token.actions.githubusercontent.com",
+	"subject": "repo:GH_ORG/GH_REPO:pull_request",
+	"description": "GitHub Actions OIDC - pull_request runs",
+	"audiences": ["api://AzureADTokenExchange"]
+}
+JSON
+
+sed -i "s/GH_ORG/$GH_ORG/g; s/GH_REPO/$GH_REPO/g" federated-cred-pr.json
+
+az ad app federated-credential create \
+	--id "$APP_OBJECT_ID" \
+	--parameters @federated-cred-pr.json
+```
+
+If you later change the workflow to run from another branch, you must add another federated credential with the matching `ref:refs/heads/<branch>` subject.
+
+#### 3) Assign Azure RBAC roles to the service principal
+
+Grant at the narrowest scope possible. Examples:
+
+```bash
+# Example: allow Terraform to deploy connectivity resources in a specific resource group
+HUB_RG_ID="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-connectivity"
+az role assignment create \
+	--assignee-object-id "$SP_OBJECT_ID" \
+	--assignee-principal-type ServicePrincipal \
+	--role "Contributor" \
+	--scope "$HUB_RG_ID"
+
+# Example: allow Terraform state access (data plane) on the storage account
+STATE_SA_ID="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-tfstate/providers/Microsoft.Storage/storageAccounts/sttfstate123"
+az role assignment create \
+	--assignee-object-id "$SP_OBJECT_ID" \
+	--assignee-principal-type ServicePrincipal \
+	--role "Storage Blob Data Contributor" \
+	--scope "$STATE_SA_ID"
+```
+
+If your configuration deploys across multiple subscriptions (hub vs vWAN vs state), repeat role assignments at each required scope.
+
+### Final step: Set GitHub repo variables used by the workflow
+
+The workflow reads these values as GitHub **Repo Variables**:
+
+- `ARM_CLIENT_ID` = `$APP_ID`
+- `ARM_TENANT_ID` = your tenant id
+- `ARM_SUBSCRIPTION_ID` = subscription used for Azure login context
+
+You can set them in the GitHub UI (Settings → Secrets and variables → Actions → Variables).
+
+Optionally, if you have GitHub CLI installed, you can set them from your terminal:
+
+```bash
+gh repo set-default "$GH_ORG/$GH_REPO"
+gh variable set ARM_CLIENT_ID --body "$APP_ID"
+gh variable set ARM_TENANT_ID --body "$AZ_TENANT_ID"
+gh variable set ARM_SUBSCRIPTION_ID --body "$AZ_SUBSCRIPTION_ID"
+```
 
 ## ExpressRoute notes
 
@@ -152,11 +293,5 @@ Useful root outputs include:
 - `virtual_wan_id`
 - `virtual_hub_ids`
 - `virtual_hub_firewall_ids`
-- `private_dns_resolver_ids`
-- `private_dns_resolver_inbound_endpoint_ips`
-- `private_dns_resolver_sidecar_vnet_ids`
 - `expressroute_gateway_ids`
 - `expressroute_circuit_ids`
-- `site_to_site_vpn_gateway_ids`
-- `site_to_site_vpn_site_ids`
-- `site_to_site_vpn_connection_ids`

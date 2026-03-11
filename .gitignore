@@ -10,6 +10,8 @@ crash.*.log
 
 # Terraform plans
 *.tfplan
+tfplan
+tfplan-*
 
 # Override files
 override.tf
@@ -25,3 +27,9 @@ terraform.rc
 .DS_Store
 Thumbs.db
 .vscode/
+
+# diagrams.net / draw.io temp files
+.$*.dtmp
+
+# diagrams.net / draw.io backup files
+.$*.bkp

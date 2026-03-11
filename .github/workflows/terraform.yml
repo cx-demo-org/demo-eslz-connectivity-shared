@@ -12,18 +12,7 @@ on:
         type: choice
         required: true
         default: plan
-        options: [plan, apply, destroy]
-      stack:
-        description: "Which environment(s) to run"
-        type: choice
-        required: true
-        default: both
-        options: [dev, prod, both]
-      confirm_destroy:
-        description: "Type DESTROY to confirm destroy (ignored unless action=destroy)"
-        type: string
-        required: false
-        default: ""
+        options: [plan, apply]
       force_apply:
         description: "Allow apply re-runs even if no new code changes exist"
         type: boolean
@@ -36,66 +25,27 @@ permissions:
 
 concurrency:
   group: tf-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   ARM_USE_OIDC: true
   ARM_USE_AZUREAD: true
   ARM_OIDC_AUDIENCE: api://AzureADTokenExchange
-  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || 'ADD_YOUR_CLIENT_ID' }}
-  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || 'ADD_YOUR_TENANT_ID' }}
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || '00000000-0000-0000-0000-000000000000' }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || '00000000-0000-0000-0000-000000000000' }}
   # Azure CLI context for login; Terraform uses subscription_id from the env tfvars.
-  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || 'ADD_YOUR_AZURE_LOGIN_SUBSCRIPTION_ID' }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || '00000000-0000-0000-0000-000000000000' }}
   TF_IN_AUTOMATION: true
+  TF_REGISTRY_CLIENT_TIMEOUT: 120
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
   plan:
-    name: plan (${{ matrix.stack }})
+    name: plan (prod)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        stack: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.stack != 'both') && fromJSON(format('["{0}"]', github.event.inputs.stack)) || fromJSON('["dev","prod"]') }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Guard (prevent GUID leaks)
-        shell: bash
-        run: bash scripts/check_no_guids.sh
-
-      - name: Preflight (required repo variables)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          missing=0
-
-          for v in ARM_CLIENT_ID ARM_TENANT_ID ARM_SUBSCRIPTION_ID; do
-            val="${!v:-}"
-            if [[ -z "${val}" || "${val}" == ADD_YOUR_* ]]; then
-              echo "ERROR: ${v} is not set. Configure it as a GitHub Repo Variable (Settings → Secrets and variables → Actions → Variables)."
-              missing=1
-            fi
-          done
-
-          # Ensure backend.hcl placeholders were replaced.
-          if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${{ matrix.stack }}/backend.hcl" >/dev/null; then
-            echo "ERROR: environments/${{ matrix.stack }}/backend.hcl still contains placeholder values (##########)."
-            echo "Update backend.hcl to point to your remote state storage."
-            missing=1
-          fi
-
-          # Ensure terraform.tfvars placeholders were replaced.
-          if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${{ matrix.stack }}/terraform.tfvars" >/dev/null; then
-            echo "ERROR: environments/${{ matrix.stack }}/terraform.tfvars still contains placeholder values (##########)."
-            echo "Update terraform.tfvars (or use TF_VAR_* overrides in GitHub Actions) before running plan/apply."
-            missing=1
-          fi
-
-          if [[ "${missing}" -ne 0 ]]; then
-            exit 1
-          fi
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -110,17 +60,50 @@ jobs:
         with:
           terraform_wrapper: false
 
+      - name: Prepare Terraform plugin cache
+        shell: bash
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - name: Cache Terraform plugin downloads
+        uses: actions/cache@v4
+        with:
+          path: .terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-plugin-cache-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-plugin-cache-
+
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
 
-      - name: Terraform init
-        run: terraform init -input=false -backend-config=environments/${{ matrix.stack }}/backend.hcl
+      - name: Terraform init (retry)
+        shell: bash
+        run: |
+          set -u
+
+          max_attempts=5
+          attempt=1
+          while true; do
+            echo "terraform init attempt ${attempt}/${max_attempts}"
+            if terraform init -input=false -backend-config=environments/prod/backend.hcl; then
+              break
+            fi
+
+            if [[ ${attempt} -ge ${max_attempts} ]]; then
+              echo "terraform init failed after ${max_attempts} attempts"
+              exit 1
+            fi
+
+            sleep_seconds=$((attempt * 20))
+            echo "Retrying in ${sleep_seconds}s..."
+            sleep "${sleep_seconds}"
+            attempt=$((attempt + 1))
+          done
 
       - name: Terraform validate
         run: terraform validate
 
       - name: Terraform plan
-        run: terraform plan -input=false -no-color -var-file=environments/${{ matrix.stack }}/terraform.tfvars -out=tfplan
+        run: terraform plan -lock-timeout=10m -input=false -no-color -var-file=environments/prod/terraform.tfvars -out=tfplan
 
       - name: Terraform plan summary
         if: always()
@@ -139,14 +122,14 @@ jobs:
 
             echo "${summary}"
             {
-              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo "### Terraform plan summary (prod)"
               echo ""
               echo "\`${summary}\`"
             } >> "${GITHUB_STEP_SUMMARY}"
           else
             echo "Plan output not available."
             {
-              echo "### Terraform plan summary (${{ matrix.stack }})"
+              echo "### Terraform plan summary (prod)"
               echo ""
               echo "Plan output not available."
             } >> "${GITHUB_STEP_SUMMARY}"
@@ -157,17 +140,17 @@ jobs:
         shell: bash
         run: |
           if [[ -f tfplan ]]; then
-            terraform show -no-color tfplan > plan-${{ matrix.stack }}.txt
+            terraform show -no-color tfplan > plan-prod.txt
           else
-            echo "Plan output not available." > plan-${{ matrix.stack }}.txt
+            echo "Plan output not available." > plan-prod.txt
           fi
 
       - name: Upload plan artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-${{ matrix.stack }}
-          path: plan-${{ matrix.stack }}.txt
+          name: tfplan-prod
+          path: plan-prod.txt
           if-no-files-found: warn
 
   apply:
@@ -193,91 +176,43 @@ jobs:
         with:
           terraform_wrapper: false
 
+      - name: Prepare Terraform plugin cache
+        shell: bash
+        run: mkdir -p "${TF_PLUGIN_CACHE_DIR}"
+
+      - name: Cache Terraform plugin downloads
+        uses: actions/cache@v4
+        with:
+          path: .terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-plugin-cache-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-plugin-cache-
+
       - name: Terraform apply (selected environments)
         shell: bash
         run: |
           set -euo pipefail
 
-          stacks="dev prod"
-          if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
-            case "${{ github.event.inputs.stack }}" in
-              dev) stacks="dev" ;;
-              prod) stacks="prod" ;;
-              both|*) stacks="dev prod" ;;
-            esac
-          fi
+          echo "=== Applying prod ==="
+          rm -rf .terraform
 
-          for stack in ${stacks}; do
-            echo "=== Applying ${stack} ==="
-            rm -rf .terraform
-            terraform init -input=false -reconfigure -backend-config="environments/${stack}/backend.hcl"
-            terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/${stack}/terraform.tfvars"
+          max_attempts=5
+          attempt=1
+          while true; do
+            echo "terraform init attempt ${attempt}/${max_attempts}"
+            if terraform init -input=false -reconfigure -backend-config="environments/prod/backend.hcl"; then
+              break
+            fi
+
+            if [[ ${attempt} -ge ${max_attempts} ]]; then
+              echo "terraform init failed after ${max_attempts} attempts"
+              exit 1
+            fi
+
+            sleep_seconds=$((attempt * 20))
+            echo "Retrying in ${sleep_seconds}s..."
+            sleep "${sleep_seconds}"
+            attempt=$((attempt + 1))
           done
 
-  destroy:
-    name: destroy
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Guard (prevent GUID leaks)
-        shell: bash
-        run: bash scripts/check_no_guids.sh
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-          audience: ${{ env.ARM_OIDC_AUDIENCE }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Terraform destroy (selected environments)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event.inputs.confirm_destroy }}" != "DESTROY" ]]; then
-            echo "Refusing to destroy: set confirm_destroy=DESTROY"
-            exit 1
-          fi
-
-          stacks="dev prod"
-          case "${{ github.event.inputs.stack }}" in
-            dev) stacks="dev" ;;
-            prod) stacks="prod" ;;
-            both|*) stacks="dev prod" ;;
-          esac
-
-          for stack in ${stacks}; do
-            if [[ "${stack}" == "prod" ]]; then
-              echo "Refusing to destroy 'prod' from CI (always-on)."
-              echo "If you truly need this, run terraform destroy locally with the prod backend."
-              exit 1
-            fi
-
-            # Ensure backend.hcl placeholders were replaced.
-            if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${stack}/backend.hcl" >/dev/null; then
-              echo "ERROR: environments/${stack}/backend.hcl still contains placeholder values (##########)."
-              echo "Update backend.hcl to point to your remote state storage."
-              exit 1
-            fi
-
-            # Ensure terraform.tfvars placeholders were replaced.
-            if grep -R --line-number -E '"ADD_YOUR_[A-Z0-9_]+"' "environments/${stack}/terraform.tfvars" >/dev/null; then
-              echo "ERROR: environments/${stack}/terraform.tfvars still contains placeholder values (##########)."
-              echo "Update terraform.tfvars (or use TF_VAR_* overrides in GitHub Actions) before running destroy."
-              exit 1
-            fi
-
-            echo "=== Destroying ${stack} ==="
-            rm -rf .terraform
-            terraform init -input=false -reconfigure -backend-config="environments/${stack}/backend.hcl"
-            terraform destroy -lock-timeout=10m -input=false -auto-approve -var-file="environments/${stack}/terraform.tfvars"
-          done
+          terraform apply -lock-timeout=10m -input=false -auto-approve -var-file="environments/prod/terraform.tfvars"
