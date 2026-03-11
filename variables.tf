@@ -185,3 +185,21 @@ variable "virtual_hubs" {
   default     = {}
 }
 
+variable "firewall_log_analytics_workspaces" {
+  description = "(Optional) Log Analytics Workspaces to create (via AVM) for Azure Firewall diagnostics. Key this map by virtual hub key (e.g., 'prod', 'prod_eu') so the workspace can be attached to the matching firewall."
+
+  type = map(object({
+    name               = string
+    resource_group_key = string
+    location           = optional(string)
+    tags               = optional(map(string), {})
+  }))
+
+  default = {}
+
+  validation {
+    condition     = alltrue([for k, ws in var.firewall_log_analytics_workspaces : contains(keys(merge(var.resource_groups, var.existing_resource_groups)), ws.resource_group_key)])
+    error_message = "Each firewall_log_analytics_workspaces[*].resource_group_key must exist in resource_groups or existing_resource_groups."
+  }
+}
+

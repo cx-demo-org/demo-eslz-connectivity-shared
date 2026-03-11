@@ -68,6 +68,34 @@ tags = {
 }
 
 ###############################################
+# Monitoring (Azure Firewall)
+#
+# Creates one dedicated Log Analytics Workspace per vHub firewall
+# and wires Azure Firewall diagnostics (allLogs + AllMetrics) to it.
+###############################################
+firewall_log_analytics_workspaces = {
+  # Southeast Asia (southeastasia) - vHub key: prod
+  prod = {
+    name               = "msft-prod-sea-firewall-law"
+    resource_group_key = "prod_hub"
+    tags = {
+      environment = "prod"
+      workload    = "msft-firewall-law"
+    }
+  }
+
+  # Europe (westeurope) - vHub key: prod_eu
+  prod_eu = {
+    name               = "msft-prod-eu-firewall-law"
+    resource_group_key = "prod_hub_eu"
+    tags = {
+      environment = "prod"
+      workload    = "msft-firewall-law"
+    }
+  }
+}
+
+###############################################
 # Virtual WAN (vWAN)
 #
 # Prod is the “source of truth” for the shared vWAN.
