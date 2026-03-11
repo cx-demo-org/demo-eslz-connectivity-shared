@@ -21,27 +21,18 @@ data "azurerm_resource_group" "rg" {
   name = each.value.name
 }
 
-# Single lookup map for all resource groups referenced by the deployment:
-# merges RGs created by `module.resource_groups` and RGs sourced via `data.azurerm_resource_group.rg`.
-locals {
-  rg = merge(
-    { for rg_key, rg_mod in module.resource_groups : rg_key => { id = rg_mod.resource_id, name = rg_mod.name, location = rg_mod.location, tags = coalesce(try(rg_mod.resource.tags, null), try(var.resource_groups[rg_key].tags, {})) } },
-    { for rg_key, rg_data in data.azurerm_resource_group.rg : rg_key => { id = rg_data.id, name = rg_data.name, location = rg_data.location, tags = rg_data.tags } }
-  )
-}
-
 module "expressroute_circuits" {
   for_each = var.expressroute_circuits
 
   source = "./modules/expressroute_circuit"
 
   name                = each.value.name
-  location            = coalesce(try(each.value.location, null), local.rg[each.value.resource_group_key].location)
-  resource_group_name = local.rg[each.value.resource_group_key].name
+  location            = coalesce(try(each.value.location, null), try(module.resource_groups[each.value.resource_group_key].location, data.azurerm_resource_group.rg[each.value.resource_group_key].location))
+  resource_group_name = try(module.resource_groups[each.value.resource_group_key].name, data.azurerm_resource_group.rg[each.value.resource_group_key].name)
 
   sku = each.value.sku
 
-  tags             = merge(local.rg[each.value.resource_group_key].tags, try(each.value.tags, {}))
+  tags             = merge(try(module.resource_groups[each.value.resource_group_key].resource.tags, data.azurerm_resource_group.rg[each.value.resource_group_key].tags, {}), try(each.value.tags, {}))
   exr_circuit_tags = try(each.value.exr_circuit_tags, null)
 
   service_provider_name          = try(each.value.service_provider_name, null)
@@ -73,11 +64,13 @@ module "firewall_policies" {
 
   name                = each.value.name
   location            = each.value.location
-  resource_group_name = local.rg[each.value.resource_group_key].name
+  resource_group_name = try(module.resource_groups[each.value.resource_group_key].name, data.azurerm_resource_group.rg[each.value.resource_group_key].name)
 
-  tags = merge(local.rg[each.value.resource_group_key].tags, try(each.value.tags, {}))
+  tags = merge(try(module.resource_groups[each.value.resource_group_key].resource.tags, data.azurerm_resource_group.rg[each.value.resource_group_key].tags, {}), try(each.value.tags, {}))
 
-  builtins               = try(each.value.builtins, null)
+  firewall_policy_sku = try(each.value.firewall_policy_sku, "Standard")
+  enable_telemetry    = try(each.value.enable_telemetry, false)
+
   rule_collection_groups = try(each.value.rule_collection_groups, {})
 }
 
@@ -88,105 +81,21 @@ data "azurerm_firewall_policy" "existing" {
   resource_group_name = each.value.resource_group_name
 }
 
-locals {
-  firewall_policy_ids = merge(
-    { for policy_key, policy_mod in module.firewall_policies : policy_key => policy_mod.id },
-    { for policy_key, policy_data in data.azurerm_firewall_policy.existing : policy_key => policy_data.id }
-  )
-}
-
 resource "azurerm_network_security_group" "nsg" {
   for_each = var.network_security_groups
 
   name                = each.value.name
-  location            = coalesce(try(each.value.location, null), local.rg[each.value.resource_group_key].location)
-  resource_group_name = local.rg[each.value.resource_group_key].name
+  location            = coalesce(try(each.value.location, null), try(module.resource_groups[each.value.resource_group_key].location, data.azurerm_resource_group.rg[each.value.resource_group_key].location))
+  resource_group_name = try(module.resource_groups[each.value.resource_group_key].name, data.azurerm_resource_group.rg[each.value.resource_group_key].name)
 
-  tags = merge(local.rg[each.value.resource_group_key].tags, try(each.value.tags, {}))
+  tags = merge(try(module.resource_groups[each.value.resource_group_key].resource.tags, data.azurerm_resource_group.rg[each.value.resource_group_key].tags, {}), try(each.value.tags, {}))
 }
 
 data "azurerm_network_security_group" "existing" {
   for_each = var.existing_network_security_groups
 
   name                = each.value.name
-  resource_group_name = local.rg[each.value.resource_group_key].name
-}
-
-locals {
-  network_security_group_ids = merge(
-    { for nsg_key, nsg in azurerm_network_security_group.nsg : nsg_key => nsg.id },
-    { for nsg_key, nsg in data.azurerm_network_security_group.existing : nsg_key => nsg.id }
-  )
-}
-
-# Optional "ID hydration" for `virtual_hubs` to support day-0 usage without
-# hard-coding full ARM IDs in tfvars.
-#
-# Supported helper keys (removed before passing through to AVM):
-# - default_parent_resource_group_key (string): resolves to local.rg[...].id
-# - firewall.firewall_policy_key (string): resolves to local.firewall_policy_ids[...]
-locals {
-  virtual_hubs_hydrated = {
-    for hub_key, hub in var.virtual_hubs : hub_key => merge(
-      # Strip helper key from the root hub object (if present)
-      { for k, v in hub : k => v if k != "default_parent_resource_group_key" },
-
-      # Hydrate default_parent_id if not explicitly provided
-      (
-        try(hub.default_parent_id, null) != null ? {}
-        : try(hub.default_parent_resource_group_key, null) != null ? { default_parent_id = local.rg[hub.default_parent_resource_group_key].id }
-        : {}
-      ),
-
-      # Hydrate firewall.firewall_policy_id if using a firewall_policy_key
-      (
-        try(hub.firewall, null) == null ? {}
-        : {
-          firewall = merge(
-            { for k, v in hub.firewall : k => v if k != "firewall_policy_key" },
-            (
-              try(hub.firewall.firewall_policy_id, null) != null ? {}
-              : try(hub.firewall.firewall_policy_key, null) != null ? { firewall_policy_id = local.firewall_policy_ids[hub.firewall.firewall_policy_key] }
-              : {}
-            )
-          )
-        }
-      ),
-
-      # Hydrate sidecar subnet NSG IDs if using a network_security_group.key
-      (
-        try(hub.sidecar_virtual_network, null) == null ? {}
-        : {
-          sidecar_virtual_network = merge(
-            hub.sidecar_virtual_network,
-            (
-              try(hub.sidecar_virtual_network.subnets, null) == null ? {}
-              : {
-                subnets = {
-                  for subnet_key, subnet in hub.sidecar_virtual_network.subnets : subnet_key => merge(
-                    subnet,
-                    (
-                      try(subnet.network_security_group, null) == null ? {}
-                      : {
-                        network_security_group = merge(
-                          { for k, v in subnet.network_security_group : k => v if k != "key" },
-                          (
-                            try(subnet.network_security_group.id, null) != null ? {}
-                            : try(subnet.network_security_group.key, null) != null ? { id = local.network_security_group_ids[subnet.network_security_group.key] }
-                            : {}
-                          )
-                        )
-                      }
-                    )
-                  )
-                }
-              }
-            )
-          )
-        }
-      )
-    )
-  }
+  resource_group_name = try(module.resource_groups[each.value.resource_group_key].name, data.azurerm_resource_group.rg[each.value.resource_group_key].name)
 }
 
 module "alz_connectivity" {
@@ -211,15 +120,6 @@ module "alz_connectivity" {
   private_link_private_dns_zone_virtual_network_link_moved_block_template_module_prefix = var.private_link_private_dns_zone_virtual_network_link_moved_block_template_module_prefix
 
   virtual_wan_settings = var.virtual_wan_settings
-  virtual_hubs         = local.virtual_hubs_hydrated
-}
-
-# Convenience locals derived from the AVM connectivity module outputs:
-# - keep hub/firewall resource IDs by hub key
-# - build a reverse lookup (hub id -> hub key) for cross-references.
-locals {
-  virtual_hub_ids          = module.alz_connectivity[0].virtual_hub_resource_ids
-  virtual_hub_firewall_ids = module.alz_connectivity[0].firewall_resource_ids
-  virtual_hub_keys_by_id   = { for hub_key, hub_id in local.virtual_hub_ids : hub_id => hub_key }
+  virtual_hubs         = local.virtual_hubs_effective
 }
 

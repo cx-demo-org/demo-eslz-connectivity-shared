@@ -5,10 +5,10 @@ module "firewall_log_analytics_workspaces" {
   version = "0.5.1"
 
   name                = each.value.name
-  location            = coalesce(try(each.value.location, null), local.rg[each.value.resource_group_key].location)
-  resource_group_name = local.rg[each.value.resource_group_key].name
+  location            = coalesce(try(each.value.location, null), try(module.resource_groups[each.value.resource_group_key].location, data.azurerm_resource_group.rg[each.value.resource_group_key].location))
+  resource_group_name = try(module.resource_groups[each.value.resource_group_key].name, data.azurerm_resource_group.rg[each.value.resource_group_key].name)
 
-  tags = merge(local.rg[each.value.resource_group_key].tags, try(each.value.tags, {}))
+  tags = merge(try(module.resource_groups[each.value.resource_group_key].resource.tags, data.azurerm_resource_group.rg[each.value.resource_group_key].tags, {}), try(each.value.tags, {}))
 
   enable_telemetry = var.enable_telemetry
 }
@@ -20,48 +20,22 @@ module "expressroute_gateway_log_analytics_workspaces" {
   version = "0.5.1"
 
   name                = each.value.name
-  location            = coalesce(try(each.value.location, null), local.rg[each.value.resource_group_key].location)
-  resource_group_name = local.rg[each.value.resource_group_key].name
+  location            = coalesce(try(each.value.location, null), try(module.resource_groups[each.value.resource_group_key].location, data.azurerm_resource_group.rg[each.value.resource_group_key].location))
+  resource_group_name = try(module.resource_groups[each.value.resource_group_key].name, data.azurerm_resource_group.rg[each.value.resource_group_key].name)
 
-  tags = merge(local.rg[each.value.resource_group_key].tags, try(each.value.tags, {}))
+  tags = merge(try(module.resource_groups[each.value.resource_group_key].resource.tags, data.azurerm_resource_group.rg[each.value.resource_group_key].tags, {}), try(each.value.tags, {}))
 
   enable_telemetry = var.enable_telemetry
 }
 
-locals {
-  firewall_diagnostic_settings = {
+resource "azurerm_monitor_diagnostic_setting" "firewall" {
+  for_each = {
     for hub_key, ws in module.firewall_log_analytics_workspaces : hub_key => {
-      firewall_id  = local.virtual_hub_firewall_ids[hub_key]
+      firewall_id  = module.alz_connectivity[0].firewall_resource_ids[hub_key]
       workspace_id = ws.resource_id
     }
-    if contains(keys(local.virtual_hub_firewall_ids), hub_key)
+    if contains(keys(module.alz_connectivity[0].firewall_resource_ids), hub_key)
   }
-}
-
-locals {
-  expressroute_gateway_ids_by_name = {
-    for gw in coalescelist(try(module.alz_connectivity[0].express_route_gateway_resources, []), []) :
-    gw.name => gw.id
-  }
-
-  expressroute_gateway_ids_by_hub_key = {
-    for hub_key, hub in var.virtual_hubs :
-    hub_key => lookup(local.expressroute_gateway_ids_by_name, try(hub.virtual_network_gateways.express_route.name, ""), null)
-    if try(hub.enabled_resources.virtual_network_gateway_express_route, false)
-    && lookup(local.expressroute_gateway_ids_by_name, try(hub.virtual_network_gateways.express_route.name, ""), null) != null
-  }
-
-  expressroute_gateway_diagnostic_settings = {
-    for hub_key, ws in module.expressroute_gateway_log_analytics_workspaces : hub_key => {
-      expressroute_gateway_id = local.expressroute_gateway_ids_by_hub_key[hub_key]
-      workspace_id            = ws.resource_id
-    }
-    if contains(keys(local.expressroute_gateway_ids_by_hub_key), hub_key)
-  }
-}
-
-resource "azurerm_monitor_diagnostic_setting" "firewall" {
-  for_each = local.firewall_diagnostic_settings
 
   provider = azurerm.wan
 
@@ -69,20 +43,30 @@ resource "azurerm_monitor_diagnostic_setting" "firewall" {
   target_resource_id         = each.value.firewall_id
   log_analytics_workspace_id = each.value.workspace_id
 
-  log_analytics_destination_type = "Dedicated"
+  log_analytics_destination_type = var.firewall_diagnostic_log_analytics_destination_type
 
   enabled_log {
-    category_group = "allLogs"
+    category_group = var.firewall_diagnostic_enabled_log_category_group
   }
 
-  metric {
-    category = "AllMetrics"
-    enabled  = true
+  dynamic "enabled_metric" {
+    for_each = var.firewall_diagnostic_enabled_metric_enabled ? [1] : []
+    content {
+      category = var.firewall_diagnostic_enabled_metric_category
+    }
   }
 }
 
 resource "azurerm_monitor_diagnostic_setting" "expressroute_gateway" {
-  for_each = local.expressroute_gateway_diagnostic_settings
+  for_each = {
+    for hub_key, ws in module.expressroute_gateway_log_analytics_workspaces : hub_key => {
+      expressroute_gateway_id = lookup({ for gw in coalescelist(try(module.alz_connectivity[0].express_route_gateway_resources, []), []) : gw.name => gw.id }, try(var.virtual_hubs[hub_key].virtual_network_gateways.express_route.name, ""), null)
+      workspace_id            = ws.resource_id
+    }
+    if contains(keys(var.virtual_hubs), hub_key)
+    && try(var.virtual_hubs[hub_key].enabled_resources.virtual_network_gateway_express_route, false)
+    && lookup({ for gw in coalescelist(try(module.alz_connectivity[0].express_route_gateway_resources, []), []) : gw.name => gw.id }, try(var.virtual_hubs[hub_key].virtual_network_gateways.express_route.name, ""), null) != null
+  }
 
   provider = azurerm.wan
 
@@ -90,8 +74,10 @@ resource "azurerm_monitor_diagnostic_setting" "expressroute_gateway" {
   target_resource_id         = each.value.expressroute_gateway_id
   log_analytics_workspace_id = each.value.workspace_id
 
-  metric {
-    category = "AllMetrics"
-    enabled  = true
+  dynamic "enabled_metric" {
+    for_each = var.expressroute_gateway_diagnostic_enabled_metric_enabled ? [1] : []
+    content {
+      category = var.expressroute_gateway_diagnostic_enabled_metric_category
+    }
   }
 }

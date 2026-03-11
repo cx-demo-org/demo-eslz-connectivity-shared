@@ -13,69 +13,42 @@ variable "resource_group_name" {
   type        = string
 }
 
+variable "firewall_policy_sku" {
+  description = "Firewall Policy SKU. Typically 'Standard' or 'Premium'."
+  type        = string
+  default     = "Standard"
+
+  validation {
+    condition     = contains(["Standard", "Premium"], var.firewall_policy_sku)
+    error_message = "firewall_policy_sku must be one of: Standard, Premium."
+  }
+}
+
 variable "tags" {
   description = "Tags applied to the firewall policy."
   type        = map(string)
   default     = {}
 }
 
-variable "rule_collection_groups" {
-  description = "Custom rule collection groups to create for this firewall policy."
-  # NOTE: terraform.tfvars does not allow function calls (like tomap()).
-  # To keep tfvars ergonomics and allow heterogeneous group shapes (e.g., baseline placeholder vs aks-egress),
-  # this input is intentionally loose and is normalized inside main.tf.
-  type    = any
-  default = {}
-
-  validation {
-    condition     = can(keys(var.rule_collection_groups))
-    error_message = "rule_collection_groups must be a map/object keyed by rule collection group name."
-  }
+variable "enable_telemetry" {
+  description = "Controls whether AVM module telemetry is enabled for the firewall policy module."
+  type        = bool
+  default     = false
 }
 
-variable "builtins" {
-  description = "Optional built-in rule sets that expand into rule_collection_groups (e.g., AKS egress baseline)."
-  type = object({
-    aks_egress = optional(object({
-      enabled = bool
+variable "rule_collection_groups" {
+  description = "Rule collection groups to create for this firewall policy, already in the AVM rule_collection_groups module schema."
+  type = map(object({
+    priority = number
 
-      # Required when enabled=true
-      source_addresses = list(string)
+    # These should match the AVM module inputs:
+    # - firewall_policy_rule_collection_group_application_rule_collection
+    # - firewall_policy_rule_collection_group_network_rule_collection
+    # - firewall_policy_rule_collection_group_nat_rule_collection
+    application_rule_collection = optional(list(any), null)
+    network_rule_collection     = optional(list(any), null)
+    nat_rule_collection         = optional(list(any), null)
+  }))
 
-      # Optional additions (the module will add region-specific AKS FQDNs automatically)
-      additional_fqdns = optional(list(string), [])
-
-      # Required when enabled=true
-      dns_servers = list(string)
-      ntp_servers = list(string)
-
-      # Optional: destinations you want as TCP/443 network rules rather than app rules.
-      extra_tcp_fqdns = optional(list(string), [])
-    }))
-  })
-
-  default = {
-    aks_egress = null
-  }
-
-  validation {
-    condition = (
-      try(var.builtins.aks_egress, null) == null
-      || try(var.builtins.aks_egress.enabled, false) == false
-      || length(try(var.builtins.aks_egress.source_addresses, [])) > 0
-    )
-    error_message = "When builtins.aks_egress.enabled=true, builtins.aks_egress.source_addresses must be provided and non-empty."
-  }
-
-  validation {
-    condition = (
-      try(var.builtins.aks_egress, null) == null
-      || try(var.builtins.aks_egress.enabled, false) == false
-      || (
-        length(try(var.builtins.aks_egress.dns_servers, [])) > 0
-        && length(try(var.builtins.aks_egress.ntp_servers, [])) > 0
-      )
-    )
-    error_message = "When builtins.aks_egress.enabled=true, builtins.aks_egress.dns_servers and builtins.aks_egress.ntp_servers must be provided and non-empty."
-  }
+  default = {}
 }

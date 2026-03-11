@@ -318,12 +318,12 @@ firewall_policies = {
       "aks-egress" = {
         priority = 200
 
-        application_rule_collections = {
-          "aks-app" = {
-            priority = 200
+        application_rule_collection = [
+          {
             action   = "Allow"
-
-            rules = [
+            name     = "aks-app"
+            priority = 200
+            rule = [
               {
                 name             = "aks-platform-fqdns"
                 source_addresses = ["*"]
@@ -372,14 +372,14 @@ firewall_policies = {
               },
             ]
           }
-        }
+        ]
 
-        network_rule_collections = {
-          "aks-network" = {
-            priority = 210
+        network_rule_collection = [
+          {
             action   = "Allow"
-
-            rules = [
+            name     = "aks-network"
+            priority = 210
+            rule = [
               {
                 name                  = "aks-controlplane-udp-1194"
                 protocols             = ["UDP"]
@@ -414,10 +414,10 @@ firewall_policies = {
                 source_addresses      = ["*"]
                 destination_addresses = ["*"]
                 destination_ports     = ["123"]
-              },
+              }
             ]
           }
-        }
+        ]
       }
     }
   }
@@ -439,12 +439,12 @@ firewall_policies = {
       "aks-egress" = {
         priority = 200
 
-        application_rule_collections = {
-          "aks-app" = {
-            priority = 200
+        application_rule_collection = [
+          {
             action   = "Allow"
-
-            rules = [
+            name     = "aks-app"
+            priority = 200
+            rule = [
               {
                 name             = "aks-platform-fqdns"
                 source_addresses = ["*"]
@@ -486,17 +486,17 @@ firewall_policies = {
                 source_addresses      = ["*"]
                 protocols             = [{ type = "Http", port = 80 }, { type = "Https", port = 443 }]
                 destination_fqdn_tags = ["AzureKubernetesService"]
-              },
+              }
             ]
           }
-        }
+        ]
 
-        network_rule_collections = {
-          "aks-network" = {
-            priority = 210
+        network_rule_collection = [
+          {
             action   = "Allow"
-
-            rules = [
+            name     = "aks-network"
+            priority = 210
+            rule = [
               {
                 name                  = "aks-controlplane-udp-1194"
                 protocols             = ["UDP"]
@@ -531,10 +531,10 @@ firewall_policies = {
                 source_addresses      = ["*"]
                 destination_addresses = ["*"]
                 destination_ports     = ["123"]
-              },
+              }
             ]
           }
-        }
+        ]
       }
     }
   }
@@ -569,6 +569,10 @@ virtual_hubs = {
     hub = {
       name           = "msft-vhub-prod-sea"
       address_prefix = "10.2.0.0/20"
+
+      # Optional AVM hub settings (explicit here so they are TFVARS-configurable).
+      hub_routing_preference               = "ExpressRoute"
+      virtual_router_auto_scale_min_capacity = 2
       tags = {
         environment = "prod"
         workload    = "msft-vhub"
@@ -724,6 +728,10 @@ virtual_hubs = {
     hub = {
       name           = "msft-vhub-prod-eu"
       address_prefix = "172.16.0.0/20"
+
+      # Optional AVM hub settings (explicit here so they are TFVARS-configurable).
+      hub_routing_preference               = "ExpressRoute"
+      virtual_router_auto_scale_min_capacity = 2
       tags = {
         environment = "prod"
         workload    = "msft-vhub"

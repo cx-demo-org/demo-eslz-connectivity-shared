@@ -5,25 +5,34 @@ output "virtual_wan_id" {
 
 output "firewall_policy_ids" {
   description = "Map of firewall policy ids by key (created or looked up)."
-  value       = local.firewall_policy_ids
+  value = merge(
+    { for policy_key, policy_mod in module.firewall_policies : policy_key => policy_mod.id },
+    { for policy_key, policy_data in data.azurerm_firewall_policy.existing : policy_key => policy_data.id }
+  )
 }
 
 output "virtual_hub_ids" {
   description = "Map of virtual hub ids by key."
-  value       = local.virtual_hub_ids
+  value       = module.alz_connectivity[0].virtual_hub_resource_ids
 }
 
 output "virtual_hub_firewall_ids" {
   description = "Map of firewall ids by virtual hub key (null if not created)."
-  value       = local.virtual_hub_firewall_ids
+  value       = module.alz_connectivity[0].firewall_resource_ids
 }
 
 output "expressroute_gateway_ids" {
   description = "Map of ExpressRoute Gateway ids by virtual hub key (only for hubs with expressroute_gateway configured)."
   value = {
-    for gw in try(module.alz_connectivity[0].express_route_gateway_resources, []) :
-    local.virtual_hub_keys_by_id[gw.virtual_hub_id] => gw.id
-    if try(local.virtual_hub_keys_by_id[gw.virtual_hub_id], null) != null
+    for hub_key, hub_id in module.alz_connectivity[0].virtual_hub_resource_ids :
+    hub_key => try([
+      for gw in try(module.alz_connectivity[0].express_route_gateway_resources, []) : gw.id
+      if gw.virtual_hub_id == hub_id
+    ][0], null)
+    if try([
+      for gw in try(module.alz_connectivity[0].express_route_gateway_resources, []) : gw.id
+      if gw.virtual_hub_id == hub_id
+    ][0], null) != null
   }
 }
 

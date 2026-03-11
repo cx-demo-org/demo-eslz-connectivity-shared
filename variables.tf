@@ -108,12 +108,13 @@ variable "firewall_policies" {
 
     tags = optional(map(string))
 
-    # Optional: built-in rule sets that expand into rule_collection_groups (opt-in).
-    builtins = optional(any)
+    # Optional: pass-through to AVM firewall policy module.
+    firewall_policy_sku = optional(string, "Standard")
+    enable_telemetry    = optional(bool, false)
 
-    # Optional: fully custom rules to build per-policy.
-    # Shape is validated inside the fwpolicy module.
-    rule_collection_groups = optional(any)
+    # Optional: rule collection groups in the AVM `rule_collection_groups` module schema.
+    # This is passed through to the fwpolicy wrapper module without normalization.
+    rule_collection_groups = optional(any, {})
   }))
 
   default = {}
@@ -214,7 +215,7 @@ variable "expressroute_circuits" {
 }
 
 variable "virtual_hubs" {
-  description = "Virtual hubs in the native AVM module schema. This is passed through to the AVM module input `virtual_hubs`."
+  description = "Virtual hubs in the native AVM module schema. This is passed through to the AVM module input `virtual_hubs`, with optional day-0 helper keys hydrated to IDs (e.g., default_parent_resource_group_key, firewall_policy_key, subnet network_security_group.key)."
   type        = any
   default     = {}
 }
@@ -265,10 +266,13 @@ Prefer this input when you already have Entra object IDs and want the simplest p
 EOT
 
   type = map(object({
-    role_definition_id                     = optional(string)
-    role_definition_name                   = optional(string)
-    principal_type                         = optional(string)
-    principal_id                           = string
+    role_definition_id   = optional(string)
+    role_definition_name = optional(string)
+    principal_type       = optional(string)
+    principal_id         = string
+    # Hybrid/day-0 friendly:
+    # - Prefer explicit scope when you already know the ARM ID.
+    # - Otherwise, set scope_resource_group_key to derive scope from a created/lookup RG.
     scope                                  = optional(string)
     scope_resource_group_key               = optional(string)
     condition                              = optional(string)
@@ -287,5 +291,51 @@ EOT
     ])
     error_message = "Each role_assignments_azure_resource_manager entry must set either 'scope' or 'scope_resource_group_key'."
   }
+
+  validation {
+    condition = alltrue([
+      for k, ra in var.role_assignments_azure_resource_manager :
+      try(ra.scope_resource_group_key, null) == null
+      || contains(keys(merge(var.resource_groups, var.existing_resource_groups)), ra.scope_resource_group_key)
+    ])
+    error_message = "If set, each role_assignments_azure_resource_manager[*].scope_resource_group_key must exist in resource_groups or existing_resource_groups."
+  }
+
+}
+
+variable "firewall_diagnostic_log_analytics_destination_type" {
+  description = "Log Analytics destination type for Azure Firewall diagnostic settings. Common values: 'Dedicated', 'AzureDiagnostics'."
+  type        = string
+  default     = "Dedicated"
+}
+
+variable "firewall_diagnostic_enabled_log_category_group" {
+  description = "Diagnostic log category group to enable for Azure Firewall (e.g., 'allLogs')."
+  type        = string
+  default     = "allLogs"
+}
+
+variable "firewall_diagnostic_enabled_metric_category" {
+  description = "Diagnostic metric category to enable for Azure Firewall (e.g., 'AllMetrics')."
+  type        = string
+  default     = "AllMetrics"
+}
+
+variable "firewall_diagnostic_enabled_metric_enabled" {
+  description = "Whether the Azure Firewall diagnostic metric category is enabled."
+  type        = bool
+  default     = true
+}
+
+variable "expressroute_gateway_diagnostic_enabled_metric_category" {
+  description = "Diagnostic metric category to enable for ExpressRoute Gateway (e.g., 'AllMetrics')."
+  type        = string
+  default     = "AllMetrics"
+}
+
+variable "expressroute_gateway_diagnostic_enabled_metric_enabled" {
+  description = "Whether the ExpressRoute Gateway diagnostic metric category is enabled."
+  type        = bool
+  default     = true
 }
 
