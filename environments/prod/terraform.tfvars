@@ -111,40 +111,40 @@ network_security_groups = {
 role_assignments_azure_resource_manager = {
   # Southeast Asia hub RG
   prod_hub_owner_group = {
-    principal_id         = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
-    role_definition_name = "Owner"
+    principal_id             = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
+    role_definition_name     = "Owner"
     scope_resource_group_key = "prod_hub"
   }
 
   prod_hub_owner_user = {
-    principal_id         = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
-    role_definition_name = "Owner"
+    principal_id             = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
+    role_definition_name     = "Owner"
     scope_resource_group_key = "prod_hub"
   }
 
   # Europe hub RG
   prod_hub_eu_owner_group = {
-    principal_id         = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
-    role_definition_name = "Owner"
+    principal_id             = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
+    role_definition_name     = "Owner"
     scope_resource_group_key = "prod_hub_eu"
   }
 
   prod_hub_eu_owner_user = {
-    principal_id         = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
-    role_definition_name = "Owner"
+    principal_id             = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
+    role_definition_name     = "Owner"
     scope_resource_group_key = "prod_hub_eu"
   }
 
   # Shared connectivity RG (vWAN RG)
   prod_connectivity_owner_group = {
-    principal_id         = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
-    role_definition_name = "Owner"
+    principal_id             = "ad58e86d-fdc0-4a37-9eee-83f7bab3a201"
+    role_definition_name     = "Owner"
     scope_resource_group_key = "prod_connectivity"
   }
 
   prod_connectivity_owner_user = {
-    principal_id         = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
-    role_definition_name = "Owner"
+    principal_id             = "dff70d67-3efe-4549-a63f-f8e1e6f3ec9d"
+    role_definition_name     = "Owner"
     scope_resource_group_key = "prod_connectivity"
   }
 }
@@ -552,7 +552,7 @@ virtual_hubs = {
   # Southeast Asia (southeastasia)
   ###############################################
   prod = {
-    location          = "southeastasia"
+    location                          = "southeastasia"
     default_parent_resource_group_key = "prod_hub"
 
     enabled_resources = {
@@ -576,11 +576,11 @@ virtual_hubs = {
     }
 
     firewall = {
-      name               = "msft-vhub-prod-sea-firewall"
-      sku_name           = "AZFW_Hub"
-      sku_tier           = "Standard"
+      name                = "msft-vhub-prod-sea-firewall"
+      sku_name            = "AZFW_Hub"
+      sku_tier            = "Standard"
       firewall_policy_key = "prod"
-      zones              = []
+      zones               = []
     }
 
     virtual_network_gateways = {
@@ -707,7 +707,7 @@ virtual_hubs = {
   # Europe (westeurope)
   ###############################################
   prod_eu = {
-    location          = "westeurope"
+    location                          = "westeurope"
     default_parent_resource_group_key = "prod_hub_eu"
 
     enabled_resources = {
@@ -731,11 +731,11 @@ virtual_hubs = {
     }
 
     firewall = {
-      name               = "msft-vhub-prod-eu-firewall"
-      sku_name           = "AZFW_Hub"
-      sku_tier           = "Standard"
+      name                = "msft-vhub-prod-eu-firewall"
+      sku_name            = "AZFW_Hub"
+      sku_tier            = "Standard"
       firewall_policy_key = "prod_eu"
-      zones              = []
+      zones               = []
     }
 
     virtual_network_gateways = {
