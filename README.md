@@ -41,7 +41,7 @@ This repo can deploy:
 
 The architecture diagram is shown below:
 
-![msft-eslz-connectivity architecture](./eslz-connectivity-v3.png)
+![msft-eslz-connectivity architecture](./documents/images/eslz-connectivity-v3.png)
 
 ## Prerequisites
 
