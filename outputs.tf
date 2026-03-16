@@ -6,7 +6,7 @@ output "virtual_wan_id" {
 output "firewall_policy_ids" {
   description = "Map of firewall policy ids by key (created or looked up)."
   value = merge(
-    { for policy_key, policy_mod in module.firewall_policies : policy_key => policy_mod.id },
+    { for policy_key, policy_mod in module.firewall_policies : policy_key => policy_mod.resource_id },
     { for policy_key, policy_data in data.azurerm_firewall_policy.existing : policy_key => policy_data.id }
   )
 }

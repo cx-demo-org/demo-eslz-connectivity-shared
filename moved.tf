@@ -25,6 +25,55 @@ moved {
 
 # Migrate legacy standalone modules into the AVM root module addresses.
 
+# ExpressRoute circuits (wrapper removal)
+moved {
+  from = module.expressroute_circuits["prod_primary"].module.this.azurerm_express_route_circuit.this
+  to   = module.expressroute_circuits["prod_primary"].azurerm_express_route_circuit.this
+}
+
+# Firewall policies (wrapper removal)
+moved {
+  from = module.firewall_policies["prod"].module.firewall_policy.azurerm_firewall_policy.this
+  to   = module.firewall_policies["prod"].azurerm_firewall_policy.this
+}
+
+moved {
+  from = module.firewall_policies["prod_eu"].module.firewall_policy.azurerm_firewall_policy.this
+  to   = module.firewall_policies["prod_eu"].azurerm_firewall_policy.this
+}
+
+# Firewall policy rule collection groups (wrapper removal)
+moved {
+  from = module.firewall_policies["prod"].module.rule_collection_groups["aks-egress"]
+  to   = module.firewall_policy_rule_collection_groups["prod/aks-egress"]
+}
+
+moved {
+  from = module.firewall_policies["prod_eu"].module.rule_collection_groups["aks-egress"]
+  to   = module.firewall_policy_rule_collection_groups["prod_eu/aks-egress"]
+}
+
+# Network Security Groups (migrate from raw resources to AVM module)
+moved {
+  from = azurerm_network_security_group.nsg["prod_sea_dns_inbound"]
+  to   = module.network_security_groups["prod_sea_dns_inbound"].azurerm_network_security_group.this
+}
+
+moved {
+  from = azurerm_network_security_group.nsg["prod_sea_dns_outbound"]
+  to   = module.network_security_groups["prod_sea_dns_outbound"].azurerm_network_security_group.this
+}
+
+moved {
+  from = azurerm_network_security_group.nsg["prod_eu_dns_inbound"]
+  to   = module.network_security_groups["prod_eu_dns_inbound"].azurerm_network_security_group.this
+}
+
+moved {
+  from = azurerm_network_security_group.nsg["prod_eu_dns_outbound"]
+  to   = module.network_security_groups["prod_eu_dns_outbound"].azurerm_network_security_group.this
+}
+
 # ExpressRoute gateways
 moved {
   from = module.expressroute_gateways["prod"].module.this.azurerm_express_route_gateway.express_route_gateway["gateway"]

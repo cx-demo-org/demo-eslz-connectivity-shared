@@ -11,12 +11,12 @@ locals {
   )
 
   firewall_policy_ids = merge(
-    { for key, mod in module.firewall_policies : key => mod.id },
+    { for key, mod in module.firewall_policies : key => mod.resource_id },
     { for key, fp in data.azurerm_firewall_policy.existing : key => fp.id }
   )
 
   network_security_group_ids = merge(
-    { for key, nsg in azurerm_network_security_group.nsg : key => nsg.id },
+    { for key, nsg in module.network_security_groups : key => nsg.resource_id },
     { for key, nsg in data.azurerm_network_security_group.existing : key => nsg.id }
   )
 
