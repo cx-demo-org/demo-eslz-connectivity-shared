@@ -31,9 +31,6 @@ This repo can deploy:
 
 ## Repo layout
 
-- `modules/`
-	- `modules/fwpolicy`: Azure Firewall Policy + rule collection groups
-	- `modules/expressroute_circuit`: AVM ExpressRoute Circuit wrapper
 - `environments/`
 	- `environments/prod/backend.hcl` + `environments/prod/terraform.tfvars`
 

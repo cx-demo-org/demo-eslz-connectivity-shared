@@ -31,10 +31,10 @@ module "expressroute_gateway_log_analytics_workspaces" {
 resource "azurerm_monitor_diagnostic_setting" "firewall" {
   for_each = {
     for hub_key, ws in module.firewall_log_analytics_workspaces : hub_key => {
-      firewall_id  = module.alz_connectivity[0].firewall_resource_ids[hub_key]
+      firewall_id  = module.alz_connectivity.firewall_resource_ids[hub_key]
       workspace_id = ws.resource_id
     }
-    if contains(keys(module.alz_connectivity[0].firewall_resource_ids), hub_key)
+    if contains(keys(module.alz_connectivity.firewall_resource_ids), hub_key)
   }
 
   provider = azurerm.wan
@@ -60,7 +60,7 @@ resource "azurerm_monitor_diagnostic_setting" "firewall" {
 resource "azurerm_monitor_diagnostic_setting" "expressroute_gateway" {
   for_each = {
     for hub_key, ws in module.expressroute_gateway_log_analytics_workspaces : hub_key => {
-      expressroute_gateway_id = lookup({ for gw in coalescelist(try(module.alz_connectivity[0].express_route_gateway_resources, []), []) : gw.name => gw.id }, try(var.virtual_hubs[hub_key].virtual_network_gateways.express_route.name, ""), null)
+      expressroute_gateway_id = lookup({ for gw in coalescelist(try(module.alz_connectivity.express_route_gateway_resources, []), []) : gw.name => gw.id }, try(var.virtual_hubs[hub_key].virtual_network_gateways.express_route.name, ""), null)
       workspace_id            = ws.resource_id
     }
     if contains(keys(var.virtual_hubs), hub_key)

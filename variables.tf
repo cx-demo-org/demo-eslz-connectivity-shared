@@ -139,6 +139,14 @@ variable "network_security_groups" {
     resource_group_key = string
     location           = optional(string)
     tags               = optional(map(string), {})
+
+    # Optional: pass-through to AVM NSG module inputs.
+    security_rules      = optional(any, {})
+    diagnostic_settings = optional(any, {})
+    role_assignments    = optional(any, {})
+    lock                = optional(any)
+    timeouts            = optional(any)
+    enable_telemetry    = optional(bool)
   }))
 
   default = {}
