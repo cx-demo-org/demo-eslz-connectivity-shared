@@ -58,3 +58,28 @@ output "site_to_site_vpn_connection_ids" {
   value       = {}
 }
 
+output "dmz_virtual_networks" {
+  description = "(Optional) DMZ VNets created by modules/dmz_vnet (null when disabled)."
+  value       = length(module.dmz_vnet) > 0 ? module.dmz_vnet[0].virtual_networks : null
+}
+
+output "dmz_web_application_firewall_policy_ids" {
+  description = "(Optional) DMZ WAF policy IDs by key (empty when disabled)."
+  value       = length(module.dmz_application_gw) > 0 ? module.dmz_application_gw[0].web_application_firewall_policy_ids : {}
+}
+
+output "dmz_application_gateway_ids" {
+  description = "(Optional) DMZ Application Gateway IDs by key (empty when disabled)."
+  value       = length(module.dmz_application_gw) > 0 ? module.dmz_application_gw[0].application_gateway_ids : {}
+}
+
+output "dmz_application_gateway_public_ip_ids" {
+  description = "(Optional) DMZ Application Gateway public IP resource IDs by key (empty when disabled)."
+  value       = length(module.dmz_application_gw) > 0 ? module.dmz_application_gw[0].application_gateway_public_ip_ids : {}
+}
+
+output "dmz_application_gateway_public_ip_addresses" {
+  description = "(Optional) DMZ Application Gateway public IP addresses by key (empty when disabled)."
+  value       = length(module.dmz_application_gw) > 0 ? module.dmz_application_gw[0].application_gateway_public_ip_addresses : {}
+}
+
