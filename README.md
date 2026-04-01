@@ -29,6 +29,10 @@ This repo can deploy:
 	- Monitoring for ExpressRoute gateways (dedicated Log Analytics Workspace per hub + diagnostic settings/metrics)
 	- ExpressRoute circuits (one or many; provider-based or ExpressRoute Direct)
 	- Site-to-Site VPN (S2S VPN Gateway, VPN Sites, and Connections) per hub
+	- Bastion hosts (Azure Bastion) per hub (when enabled)
+	- DMZ VNets (one or many) connected to their respective vHub via vWAN hub virtual network connections
+	- Application Gateways (WAF_v2) deployed into DMZ VNets
+	- Web Application Firewall (WAF) policies for the DMZ Application Gateways
 
 ## Repo layout
 
@@ -97,6 +101,12 @@ Key inputs:
 - `virtual_hubs` map (each hub can include optional `firewall`, optional `expressroute_gateway`, optional `private_dns_zones`, optional `private_dns_resolver`, and optional `site_to_site_vpn`)
 - `firewall_policies` map
 - `expressroute_circuits` map (optional)
+
+Optional DMZ/App Gateway inputs:
+
+- `dmz_vnet` (optional): DMZ virtual networks (and supporting resources) deployed via `modules/dmz_vnet`
+- `dmz_application_gateways` (optional): Application Gateways (WAF_v2) deployed into the DMZ VNets via `modules/application_gw`
+- `dmz_web_application_firewall_policies` (optional): WAF policies created and optionally attached to the DMZ Application Gateways
 
 ### Network Security Groups (NSGs) and rules
 

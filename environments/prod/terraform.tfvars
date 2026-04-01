@@ -73,6 +73,263 @@ tags = {
 }
 
 ###############################################
+# DMZ VNet + Application Gateway (WAF) (Optional)
+#
+# This repo can optionally deploy a separate "DMZ" VNet and an Application Gateway (WAF_v2)
+# alongside the vWAN/vHub connectivity foundation.
+###############################################
+dmz_vnet = {
+  # This module requires a Log Analytics workspace configuration when BYO is null.
+  location = "southeastasia"
+
+  tags = {
+    environment = "prod"
+    workload    = "dmz"
+  }
+
+  log_analytics_workspace_configuration = {
+    name               = "demo-prod-dmz-law"
+    resource_group_key = "dmz_sea"
+    sku                = "PerGB2018"
+    retention_in_days  = 30
+  }
+
+  resource_groups = {
+    dmz_sea = {
+      name     = "demo-prod-dmz-sea-rg"
+      location = "southeastasia"
+      tags     = {}
+    }
+
+    dmz_eu = {
+      name     = "demo-prod-dmz-eu-rg"
+      location = "westeurope"
+      tags     = {}
+    }
+  }
+
+  virtual_networks = {
+    dmz_sea = {
+      name               = "demo-prod-dmz-sea-vnet"
+      location           = "southeastasia"
+      resource_group_key = "dmz_sea"
+      address_space      = ["10.60.0.0/16"]
+
+      subnets = {
+        app_gateway = {
+          name           = "sub-appgw"
+          address_prefix = "10.60.1.0/24"
+        }
+      }
+    }
+
+    dmz_eu = {
+      name               = "demo-prod-dmz-eu-vnet"
+      location           = "westeurope"
+      resource_group_key = "dmz_eu"
+      address_space      = ["10.61.0.0/16"]
+
+      subnets = {
+        app_gateway = {
+          name           = "sub-appgw"
+          address_prefix = "10.61.1.0/24"
+        }
+      }
+    }
+  }
+
+  # Connect each DMZ VNet to its respective vHub (vWAN spoke-to-hub connection).
+  # Uses vhub_key to avoid hard-coding resource IDs in this customer-facing repo.
+  vhub_connectivity_definitions = {
+    demo-prod-dmz-sea-vhub-conn = {
+      vhub_key = "prod"
+      virtual_network = {
+        key = "dmz_sea"
+      }
+      internet_security_enabled = true
+    }
+
+    demo-prod-dmz-eu-vhub-conn = {
+      vhub_key = "prod_eu"
+      virtual_network = {
+        key = "dmz_eu"
+      }
+      internet_security_enabled = true
+    }
+  }
+}
+
+dmz_web_application_firewall_policies = {
+  dmz_waf_sea = {
+    name               = "demo-prod-dmz-sea-waf"
+    resource_group_key = "dmz_sea"
+    location           = "southeastasia"
+
+    policy_settings = {
+      enabled                     = true
+      mode                        = "Prevention"
+      request_body_check          = true
+      file_upload_limit_in_mb     = 100
+      max_request_body_size_in_kb = 128
+    }
+
+    managed_rules = {
+      managed_rule_set = {
+        owasp_3_2 = {
+          type    = "OWASP"
+          version = "3.2"
+        }
+      }
+    }
+  }
+
+  dmz_waf_eu = {
+    name               = "demo-prod-dmz-eu-waf"
+    resource_group_key = "dmz_eu"
+    location           = "westeurope"
+
+    policy_settings = {
+      enabled                     = true
+      mode                        = "Prevention"
+      request_body_check          = true
+      file_upload_limit_in_mb     = 100
+      max_request_body_size_in_kb = 128
+    }
+
+    managed_rules = {
+      managed_rule_set = {
+        owasp_3_2 = {
+          type    = "OWASP"
+          version = "3.2"
+        }
+      }
+    }
+  }
+}
+
+dmz_application_gateways = {
+  dmz_sea = {
+    name               = "demo-prod-dmz-sea-appgw"
+    location           = "southeastasia"
+    resource_group_key = "dmz_sea"
+
+    virtual_network_key = "dmz_sea"
+    subnet_key          = "app_gateway"
+
+    waf_policy_key = "dmz_waf_sea"
+
+    frontend_ports = {
+      http = {
+        name = "http"
+        port = 80
+      }
+    }
+
+    backend_address_pools = {
+      default = {
+        name         = "default"
+        ip_addresses = ["10.60.2.4"]
+      }
+    }
+
+    backend_http_settings = {
+      default = {
+        name                  = "default"
+        port                  = 80
+        protocol              = "Http"
+        cookie_based_affinity = "Disabled"
+      }
+    }
+
+    http_listeners = {
+      listener = {
+        name                           = "listener"
+        frontend_ip_configuration_name = "appgw"
+        frontend_port_name             = "http"
+        protocol                       = "Http"
+      }
+    }
+
+    request_routing_rules = {
+      rule = {
+        name                       = "rule"
+        rule_type                  = "Basic"
+        http_listener_name         = "listener"
+        backend_address_pool_name  = "default"
+        backend_http_settings_name = "default"
+        priority                   = 10
+      }
+    }
+
+    sku = {
+      name     = "WAF_v2"
+      tier     = "WAF_v2"
+      capacity = 2
+    }
+  }
+
+  dmz_eu = {
+    name               = "demo-prod-dmz-eu-appgw"
+    location           = "westeurope"
+    resource_group_key = "dmz_eu"
+
+    virtual_network_key = "dmz_eu"
+    subnet_key          = "app_gateway"
+
+    waf_policy_key = "dmz_waf_eu"
+
+    frontend_ports = {
+      http = {
+        name = "http"
+        port = 80
+      }
+    }
+
+    backend_address_pools = {
+      default = {
+        name         = "default"
+        ip_addresses = ["10.61.2.4"]
+      }
+    }
+
+    backend_http_settings = {
+      default = {
+        name                  = "default"
+        port                  = 80
+        protocol              = "Http"
+        cookie_based_affinity = "Disabled"
+      }
+    }
+
+    http_listeners = {
+      listener = {
+        name                           = "listener"
+        frontend_ip_configuration_name = "appgw"
+        frontend_port_name             = "http"
+        protocol                       = "Http"
+      }
+    }
+
+    request_routing_rules = {
+      rule = {
+        name                       = "rule"
+        rule_type                  = "Basic"
+        http_listener_name         = "listener"
+        backend_address_pool_name  = "default"
+        backend_http_settings_name = "default"
+        priority                   = 10
+      }
+    }
+
+    sku = {
+      name     = "WAF_v2"
+      tier     = "WAF_v2"
+      capacity = 2
+    }
+  }
+}
+
+###############################################
 # Network Security Groups (NSGs)
 #
 # Created in this stack so subnets can reference them by key.

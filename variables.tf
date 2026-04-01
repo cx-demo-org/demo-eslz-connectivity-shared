@@ -347,3 +347,36 @@ variable "expressroute_gateway_diagnostic_enabled_metric_enabled" {
   default     = true
 }
 
+variable "dmz_vnet" {
+  description = <<-EOT
+  Optional configuration to deploy a DMZ VNet and supporting resources using `modules/dmz_vnet`.
+
+  Set to null to disable.
+
+  Expected shape mirrors the inputs of `modules/dmz_vnet` (location, tags, resource_groups,
+  log analytics workspace config, virtual_networks, etc.).
+  EOT
+  type        = any
+  default     = null
+}
+
+variable "dmz_web_application_firewall_policies" {
+  description = "(Optional) WAF policies to create for DMZ Application Gateways."
+  type        = any
+  default     = {}
+}
+
+variable "dmz_application_gateways" {
+  description = <<-EOT
+  (Optional) Application Gateways to create (WAF_v2) in the DMZ VNet.
+
+  Each entry is passed through to the AVM Application Gateway module, with additional helper keys:
+  - resource_group_key
+  - virtual_network_key
+  - subnet_key
+  - waf_policy_key (optional)
+  EOT
+  type        = any
+  default     = {}
+}
+
