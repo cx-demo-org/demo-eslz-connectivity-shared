@@ -43,7 +43,7 @@ This repo can deploy:
 
 The architecture diagram is shown below:
 
-![demo-eslz-connectivity-shared architecture](./documents/images/eslz-connectivity-v4.png)
+![demo-eslz-connectivity-shared architecture](./documents/images/eslz-connectivity-v5.png)
 
 ## Prerequisites
 
